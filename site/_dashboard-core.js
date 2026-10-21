@@ -16,6 +16,8 @@ function dashboardEscapeHtml(value) {
 const routeMeta = {
   futures_rubber: { title: "月差/持仓", kicker: "01 / FUTURES RUBBER", description: "用天然橡胶、20号胶和丁二烯橡胶的日度月差与持仓序列观察季节性。" },
   futures_position_rank: { title: "持仓龙虎榜", kicker: "02 / POSITION RANK", description: "仅展示 RU、NR、BR 各合约前 20 名会员的多空持仓及日增减，缺失数据不补零。" },
+  weather_history: { title: "历史天气情况", kicker: "03 / WEATHER TRACKING", description: "" },
+  weather_driver_detection: { title: "天气驱动因子检测", kicker: "03 / WEATHER TRACKING", description: "基于最新已同步天气驱动图表的观测与预测解读。" },
   overview: { title: "中国橡胶进口总览", kicker: "01 / OVERVIEW", description: "用一个总量变量观察中国橡胶进口的季节性、节奏与同比变化。" },
   countries: { title: "进口自各国", kicker: "02 / ORIGIN", description: "展示最近 60 个月月均进口量达到 0.1 万吨的国家、地区及组合口径。" },
   products: { title: "各胶种", kicker: "03 / PRODUCTS", description: "展示最近 60 个月月均进口量达到 0.1 万吨的胶种序列。" },
@@ -75,7 +77,16 @@ function formatRate(value) {
 }
 
 function getRoute() {
-  const parts = window.location.hash.replace("#", "").split("/");
+  const raw = window.location.hash.replace(/^#\/?/, "");
+  const parts = raw.split("?")[0].split("/");
+  const known = Boolean(routeMeta[parts[0]]) || window.dashboardNavigationHasRoute?.(parts[0]);
+  if (!known) {
+    window.history.replaceState(window.history.state, "", window.location.pathname + window.location.search + "#futures_rubber");
+    parts.splice(0, parts.length, "futures_rubber");
+  } else if (window.location.hash.startsWith("#/")) {
+    window.history.replaceState(window.history.state, "", window.location.pathname + window.location.search + "#" + raw);
+  }
+  // Known extension routes still use the existing base shell until their renderer mounts.
   const primary = routeMeta[parts[0]] ? parts[0] : "overview";
   const items = primary === "countries"
     ? countryItems()
@@ -168,6 +179,8 @@ function shellMarkup(route) {
   const meta = routeMeta[route.primary];
   const isPositionRank = route.primary === "futures_position_rank";
   const isCustom = route.primary === "custom_analysis";
+  const isWeatherHistory = route.primary === "weather_history";
+  const isWeatherDriver = route.primary === "weather_driver_detection";
   const pageTitle = route.selected ? route.selected.label : meta.title;
   const pageDescription = route.primary === "custom_analysis" && route.selected
     ? "按已保存的 DuckDB 指标和公式实时生成折线图。"
@@ -175,22 +188,28 @@ function shellMarkup(route) {
     ? meta.description
     : route.selected ? "查看 " + route.selected.label + " 的中国进口趋势与同比变化。" : meta.description;
   const pageKicker = route.selected ? meta.kicker + " / " + route.selected.label : meta.kicker;
-  const latestHeader = isCustom ? "实时查询" : isPositionRank ? (window.positionRankUiData?.latestDate || "—") : dashboardData.latestMonth;
-  const introUnit = isCustom ? "AUTO" : isPositionRank ? "手" : ["overview", "countries", "products", "latex_diversion_observation"].includes(route.primary) ? "万吨" : "kt";
-  const introNote = isCustom ? "DUCKDB / FORMULA / LINE" : isPositionRank ? "DAILY / LONG / SHORT / NET" : "MONTHLY / YTD / YOY";
+  const latestHeader = isCustom ? "实时查询" : isPositionRank ? (window.positionRankUiData?.latestDate || "—") : isWeatherHistory ? "打开时读取" : isWeatherDriver ? "最新已同步" : dashboardData.latestMonth;
+  const introUnit = isWeatherHistory ? "IMAGE" : isWeatherDriver ? "AI" : isCustom ? "AUTO" : isPositionRank ? "手" : ["overview", "countries", "products", "latex_diversion_observation"].includes(route.primary) ? "万吨" : "kt";
+  const introNote = isWeatherHistory ? "LOCAL / LATEST FILE" : isWeatherDriver ? "基于已同步图表" : isCustom ? "DUCKDB / FORMULA / LINE" : isPositionRank ? "DAILY / LONG / SHORT / NET" : "MONTHLY / YTD / YOY";
+  const introStamp = isWeatherDriver
+    ? '<div class="intro-stamp weather-driver-actions"><small data-weather-last-updated>最后成功更新：读取中</small><small data-weather-refresh-status role="status" aria-live="polite"></small></div>'
+    : '<div class="intro-stamp"><span>UNIT</span><strong>' + introUnit + '</strong><small>' + introNote + '</small></div>';
+  const headerMarkup = isWeatherHistory ? '' : '<header class="topbar"><div class="breadcrumb"><span>' + (isWeatherDriver ? 'WEATHER' : isPositionRank ? 'FUTURES' : 'CN CUSTOMS') + '</span><i>/</i><span>' + meta.kicker + '</span></div>' +
+    '<div class="topbar-meta"><span class="update-dot"></span><span>' + (isWeatherDriver ? '最后更新' : isCustom ? '数据方式' : isPositionRank ? '最新交易日' : '最新月份') + '</span><strong' + (isWeatherDriver ? ' data-weather-header-updated' : '') + '>' + latestHeader + '</strong></div></header>';
+  const introMarkup = isWeatherHistory ? '' : '<section class="page-intro"><div><p class="eyebrow">' + dashboardEscapeHtml(pageKicker) + '</p><h1>' + dashboardEscapeHtml(pageTitle) + '</h1><p class="page-description">' + dashboardEscapeHtml(pageDescription) + '</p></div>' + introStamp + '</section>';
   return '<div class="app-shell">' +
-    '<aside class="sidebar"><a class="brand" href="#overview"><span class="brand-mark">R</span><span><strong>RUBBER</strong><small>RUBBER DATA DASHBOARD</small></span></a>' +
+    '<aside class="sidebar"><a class="brand" href="#futures_rubber"><span class="brand-mark">R</span><span><strong>RUBBER</strong><small>RUBBER DATA DASHBOARD</small></span></a>' +
       '<div class="sidebar-rule"></div><p class="sidebar-label">ANALYSIS</p><nav class="main-nav" aria-label="主导航">' + navMarkup(route) + '</nav>' +
       '<div class="sidebar-bottom"><div class="status-line"><span class="status-dot"></span><span>WAREHOUSE READY</span></div><p>Customs data monitor<br />Rubber / tire / other series</p></div>' +
-    '</aside><main class="main-content"><header class="topbar"><div class="breadcrumb"><span>' + (isPositionRank ? "FUTURES" : "CN CUSTOMS") + '</span><i>/</i><span>' + meta.kicker + '</span></div>' +
-      '<div class="topbar-meta"><span class="update-dot"></span><span>' + (isCustom ? "数据方式" : isPositionRank ? "最新交易日" : "最新月份") + '</span><strong>' + latestHeader + '</strong></div></header>' +
-      '<div class="content-wrap"><section class="page-intro"><div><p class="eyebrow">' + dashboardEscapeHtml(pageKicker) + '</p><h1>' + dashboardEscapeHtml(pageTitle) + '</h1><p class="page-description">' + dashboardEscapeHtml(pageDescription) + '</p></div>' +
-      '<div class="intro-stamp"><span>UNIT</span><strong>' + introUnit + '</strong><small>' + introNote + '</small></div></section>' + renderPage(route) + '</div></main></div>';
+    '</aside><main class="main-content' + (isWeatherHistory ? ' weather-history-main' : '') + '">' + headerMarkup +
+      '<div class="content-wrap">' + introMarkup + renderPage(route) + '</div></main></div>';
 }
 
 function renderPage(route) {
   if (route.primary === "futures_rubber") return futuresRubberPage();
   if (route.primary === "futures_position_rank") return futuresPositionRankPage();
+  if (route.primary === "weather_history") return '<section class="weather-history-page-host" aria-label="历史天气情况"><img data-weather-original data-clipboard-src="/api/weather/latest-image?format=png" src="./weather-history.jpg?v=' + Date.now() + '" alt="最新CPC橡胶天气日报" loading="eager"></section>';
+  if (route.primary === "weather_driver_detection") return '<section class="weather-driver-page-host" aria-label="天气驱动因子检测"><div class="data-loading">正在载入天气资料…</div></section>';
   if (route.primary === "countries") return countriesPage(route);
   if (route.primary === "products") return productsPage(route);
   if (route.primary === "tire_export") return tireExportPage();
@@ -279,7 +298,9 @@ function render() {
   const route = getRoute();
   app.innerHTML = shellMarkup(route);
   bindNavigation();
-  document.title = route.primary === "tire_export"
+  document.title = route.primary === "futures_rubber"
+      ? "月差/持仓｜RUBBER DASHBOARD"
+      : route.primary === "tire_export"
       ? "中国轮胎出口｜RUBBER DASHBOARD"
       : route.primary === "international_demand_observation"
         ? "国际需求观察｜RUBBER DASHBOARD"
@@ -293,6 +314,10 @@ function render() {
         ? (route.selected ? route.selected.label : "自定义分析") + "｜RUBBER DASHBOARD"
       : route.primary === "futures_position_rank"
         ? "持仓龙虎榜｜RUBBER DASHBOARD"
+      : route.primary === "weather_history"
+        ? "历史天气情况｜天气跟踪｜RUBBER DASHBOARD"
+      : route.primary === "weather_driver_detection"
+        ? "天气驱动因子检测｜天气跟踪｜RUBBER DASHBOARD"
       : route.primary === "overview"
         ? "中国橡胶进口总览｜RUBBER DASHBOARD"
         : (route.selected ? route.selected.label : routeMeta[route.primary].title) + "｜中国橡胶进口｜RUBBER DASHBOARD";

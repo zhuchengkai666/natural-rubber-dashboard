@@ -1,6 +1,9 @@
 const builtin = [
   ['futures_rubber','月差/持仓','','futures_rubber'],
   ['futures_position_rank','持仓龙虎榜','','futures_position_rank'],
+  ['weather_tracking','天气跟踪','',''],
+  ['weather_history','历史天气情况','weather_tracking','weather_history'],
+  ['weather_driver_detection','天气驱动因子检测','weather_tracking','weather_driver_detection'],
   ['rubber_export','中国橡胶进口','',''],
   ['overview','中国总览','rubber_export','overview'],
   ['countries','分国别','rubber_export','countries'],
@@ -27,6 +30,16 @@ function nodes() {
   const pageIds = new Set(pages.map(p=>'page-'+p.id));
   const result = navigation.nodes.filter(n=>!n.id.startsWith('page-') || pageIds.has(n.id)).map(n=>({...n}));
   for (const n of builtin) if (!result.some(x=>x.id===n.id)) {
+    if (n.id === 'weather_tracking') {
+      const rankIndex = result.findIndex(x=>x.id==='futures_position_rank');
+      if (rankIndex >= 0) { result.splice(rankIndex + 1, 0, {...n}); continue; }
+    }
+    if (n.parentId === 'weather_tracking') {
+      const weatherChildren = result.map((x,i)=>x.parentId==='weather_tracking'?i:-1).filter(i=>i>=0);
+      const weatherRoot = result.findIndex(x=>x.id==='weather_tracking');
+      result.splice(weatherChildren.length ? weatherChildren.at(-1) + 1 : weatherRoot + 1, 0, {...n});
+      continue;
+    }
     if (n.id === 'latex_diversion_observation') {
       const demandIndex = result.findIndex(x=>x.id==='international_demand_observation');
       if (demandIndex >= 0) { result.splice(demandIndex + 1, 0, {...n}); continue; }
@@ -42,10 +55,11 @@ function nodes() {
   return result;
 }
 window.customNavigationRoots = () => nodes().filter(n=>!n.parentId);
+window.dashboardNavigationHasRoute = primary => nodes().some(n => String(n.route || '').split('/')[0] === primary && Boolean(primary));
 window.customNavigationRefresh = async () => { navigation=await api(); };
 window.dashboardNavigationRender = (route, countryItems, productItems) => {
   const items = nodes();
-  const current = location.hash.slice(1) || 'overview';
+  const current = location.hash.slice(1) || 'futures_rubber';
   const active = n => n.route && (current===n.route || (['countries','products'].includes(n.route) && current.startsWith(n.route+'/')));
   const target = n => {
     if (n.route==='countries') return countryItems[0] ? 'countries/'+countryItems[0].id : 'countries';

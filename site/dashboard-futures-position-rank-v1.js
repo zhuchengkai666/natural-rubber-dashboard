@@ -1,4 +1,5 @@
 import { registerEditableChart } from "./dashboard-editable-chart-runtime-v1.js?v=20260914a";
+import { availableRankDates, availableRankContracts, rankGroupHasContent, rankDateAfterLoad } from "./dashboard-position-rank-dates-v1.js?v=20261021b";
 
 const rankApp = document.querySelector("#app");
 let rankData = null;
@@ -158,7 +159,7 @@ function rankMainContract(productCode, date) {
     }))
     .filter((item) => item.disclosedOpenInterest > 0)
     .sort((left, right) => right.disclosedOpenInterest - left.disclosedOpenInterest || left.contractCode.localeCompare(right.contractCode));
-  return candidates[0]?.contractCode || null;
+  return candidates[0]?.contractCode || (rankData?.groups || []).find(group => group.productCode === productCode && group.date === targetDate && rankGroupHasContent(group))?.contractCode || null;
 }
 
 function rankResolvedContract(productCode, date, contractCode) {
@@ -170,14 +171,12 @@ function rankContractOptions(product, date) {
   return [
     { value: "MAIN", label: mainContract ? "主力合约（" + mainContract + "）" : "主力合约" },
     { value: "ALL", label: "全部已披露合约" },
-    ...((product?.contracts || []).map((code) => ({ value: code, label: code }))),
+    ...availableRankContracts(rankData, product?.code, date).map((code) => ({ value: code, label: code })),
   ];
 }
 
 function rankAvailableDates(productCode) {
-  // Keep source-unavailable dates selectable so the page can distinguish a
-  // failed source request from a successfully published "not disclosed" day.
-  return [...new Set((rankData?.coverage || []).filter((item) => item.productCode === productCode).map((item) => item.date))].sort().reverse();
+  return availableRankDates(rankData, productCode);
 }
 
 function rankMembers(productCode, date) {
@@ -437,7 +436,7 @@ function rankRenderSvg(stage, points) {
 }
 
 function rankSelectMarkup(id, label, options, value) {
-  return '<div class="position-rank-control"><label for="' + id + '">' + label + '</label><select id="' + id + '">' + options.map((item) => '<option value="' + rankEscape(item.value) + '"' + (item.value === value ? " selected" : "") + '>' + rankEscape(item.label) + '</option>').join("") + '</select></div>';
+  return '<div class="position-rank-control"><label for="' + id + '">' + label + '</label><select id="' + id + '"' + (options.length ? '' : ' disabled') + '>' + (options.length ? options.map((item) => '<option value="' + rankEscape(item.value) + '"' + (item.value === value ? " selected" : "") + '>' + rankEscape(item.label) + '</option>').join("") : '<option value="">暂无数据</option>') + '</select></div>';
 }
 
 function rankMemberMarkup(members, value, search) {
@@ -448,7 +447,7 @@ function rankMemberMarkup(members, value, search) {
 function rankPageMarkup() {
   const product = rankProduct(rankState.productCode);
   const dates = rankAvailableDates(product?.code);
-  if (!dates.includes(rankState.date)) rankState.date = dates[0] || rankData?.latestDate || "";
+  if (!dates.includes(rankState.date)) rankState.date = dates[0] || "";
   const contracts = rankContractOptions(product, rankState.date);
   if (!contracts.some((item) => item.value === rankState.contractCode)) rankState.contractCode = "MAIN";
   const members = rankMembers(product?.code, rankState.date);
@@ -464,7 +463,7 @@ function rankPageMarkup() {
 
 function rankSyncShellMeta() {
   if (!rankIsRoute()) return;
-  const latest = rankData?.latestDate || "—";
+  const latest = rankAvailableDates(rankState.productCode)[0] || "—";
   const meta = document.querySelector(".topbar-meta strong");
   if (meta) meta.textContent = latest;
   const label = document.querySelector(".topbar-meta span:not(.update-dot)");
@@ -573,11 +572,11 @@ function rankRenderPage() {
   rankSyncShellMeta();
 }
 
-async function loadRankData() {
+async function loadRankData({ followLatest = false } = {}) {
   if (!rankLoadPromise) {
   rankLoadPromise = fetch("./data/futures-rubber-position-rank-data.json?v=20260921b", { cache: "no-store" })
       .then((response) => response.ok ? response.json() : Promise.reject(new Error("futures-rubber-position-rank-data.json HTTP " + response.status)))
-      .then((data) => { rankData = data; window.positionRankUiData = data; rankRenderPage(); window.dispatchEvent(new Event("position-rank-data-ready")); return data; });
+      .then((data) => { rankData = data; rankState.date = rankDateAfterLoad(data, rankState.productCode, rankState.date, followLatest); window.positionRankUiData = data; rankRenderPage(); window.dispatchEvent(new Event("position-rank-data-ready")); return data; });
   }
   return rankLoadPromise;
 }
