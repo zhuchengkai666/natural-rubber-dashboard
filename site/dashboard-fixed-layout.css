@@ -1,0 +1,59 @@
+html,
+body {
+  min-width: 1684px;
+  overflow-x: auto;
+  background: #ffffff;
+}
+
+#app {
+  min-width: 1684px;
+}
+
+.app-shell {
+  width: 1684px;
+  min-width: 1684px;
+  grid-template-columns: 244px 1440px;
+}
+
+.sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 244px;
+  z-index: 20;
+}
+
+.main-content,
+.topbar {
+  width: 1440px;
+  min-width: 1440px;
+}
+
+/* The fixed sidebar leaves the grid flow; keep content in the second track. */
+.main-content {
+  grid-column: 2;
+}
+
+.topbar {
+  padding: 0 48px;
+}
+
+.content-wrap {
+  width: 1344px;
+  max-width: none;
+  margin: 0 48px;
+  padding: 48px 0 70px;
+}
+
+.page-intro h1 {
+  font-size: 44px !important;
+}
+
+.country-charts {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+}
+@media (max-width: 760px) {
+  .sidebar {
+    width: 76px;
+  }
+}

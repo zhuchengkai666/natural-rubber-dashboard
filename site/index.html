@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RUBBER DASHBOARD | 中国橡胶数据看板</title>
+    <link rel="stylesheet" href="./dashboard.css?v=20260727d" />
+    <link rel="stylesheet" href="./dashboard-fixed-layout.css?v=20260727f" />
+    <link rel="stylesheet" href="./dashboard-charts.css?v=20260727d" />
+    <link rel="stylesheet" href="./dashboard-charts-overrides.css?v=20260727d" />
+    <link rel="stylesheet" href="./dashboard-other-country-trade.css?v=20260807a" />
+    <link rel="stylesheet" href="./dashboard-tables-compact-v1.css?v=20260928c" />
+    <link rel="stylesheet" href="./dashboard-custom-v1.css?v=20261019a" />
+  <link rel="icon" href="data:,">
+<script>var CFG={"contentVersion":"e49d588300f139375bc29bb3","snapshotVersion":"50449f4a7cecdad45691","sourceVersion":"364b60812c9e4fa87114483145379282f53ef5228eb76ed1ecc778459dcb7432"};
+/* 静态托管 fetch 兜底层：把 /api/* 请求映射到预渲染的静态 JSON。
+ * 由 build_static.py 内联注入 index.html <head>，在任何 module 脚本之前执行。
+ * CFG 由构建脚本注入（sourceVersion / snapshotVersion）。 */
+(function () {
+  'use strict';
+  if (window.__STATIC_SNAPSHOT_SHIM__) return;
+  window.__STATIC_SNAPSHOT_SHIM__ = true;
+  var realFetch = window.fetch.bind(window);
+  var SEP1 = '\u0001', SEP2 = '\u0002';
+  var MAP = null, mapPromise = null;
+  var metricsCache = null, metricsPromise = null;
+  var seriesCache = {};
+  var missCount = 0, misses = {};
+
+  function noteMiss(key) {
+    missCount++;
+    if (!misses[key] && Object.keys(misses).length >= 100) key = '[other]';
+    misses[key] = (misses[key] || 0) + 1;
+  }
+
+  function rel(p) { return new URL(p, document.baseURI).href; }
+
+  function loadMap() {
+    if (MAP) return Promise.resolve(MAP);
+    if (!mapPromise) {
+      mapPromise = realFetch(rel('api/map.json'), { cache: 'no-store' }).then(function (r) {
+        if (!r.ok) throw new Error('map ' + r.status);
+        return r.json();
+      }).then(function (m) {
+        if (m.snapshotVersion !== CFG.snapshotVersion || m.contentVersion !== CFG.contentVersion)
+          throw new Error('static version mismatch; reload required');
+        MAP = m; return m;
+      }).catch(function (error) { mapPromise = null; throw error; });
+    }
+    return mapPromise;
+  }
+
+  function decode(s) { return decodeURIComponent(String(s).replace(/\+/g, ' ')); }
+
+  function parsePairs(search) {
+    var q = search.charAt(0) === '?' ? search.slice(1) : search;
+    if (!q) return [];
+    var out = [], parts = q.split('&');
+    for (var i = 0; i < parts.length; i++) {
+      var seg = parts[i], eq = seg.indexOf('='), k, v;
+      if (eq < 0) { k = seg; v = ''; }
+      else { k = seg.slice(0, eq); v = seg.slice(eq + 1); }
+      out.push([decode(k), decode(v)]);
+    }
+    return out;
+  }
+
+  /* 与服务端 request_key 一致的规范化键：path + 排序后的 (k,v) 对 */
+  function normKey(path, search) {
+    var pairs = parsePairs(search);
+    if (path === '/api/custom-pages') {
+      pairs = pairs.filter(function (p) { return p[0] !== 'includeDeleted'; });
+    }
+    pairs = pairs.slice().sort(function (a, b) {
+      return a[0] < b[0] ? -1 : (a[0] > b[0] ? 1 : 0);
+    });
+    return path + SEP1 + pairs.map(function (p) { return p[0] + SEP2 + p[1]; }).join(SEP1);
+  }
+
+  function jsonRes(obj, status) {
+    return new Response(JSON.stringify(obj), {
+      status: status || 200,
+      headers: { 'Content-Type': 'application/json; charset=utf-8' }
+    });
+  }
+  function errRes(status, msg) { return jsonRes({ ok: false, error: msg }, status); }
+
+  /* 使用排序键；与Python数值序列化的兼容性由真实查询逐值回放验证。 */
+  function canon(v) {
+    if (v === null) return 'null';
+    if (typeof v === 'boolean') return String(v);
+    if (typeof v === 'number') return String(v);
+    if (typeof v === 'string') return JSON.stringify(v);
+    if (Array.isArray(v)) return '[' + v.map(canon).join(',') + ']';
+    if (typeof v === 'object') {
+      var keys = Object.keys(v).sort();
+      return '{' + keys.map(function (k) { return JSON.stringify(k) + ':' + canon(v[k]); }).join(',') + '}';
+    }
+    return 'null';
+  }
+
+  function chartQuery(chart) {
+    var b = chart && chart.bindings, f = chart && chart.bindingFilters;
+    return {
+      bindings: (b && typeof b === 'object' && !Array.isArray(b)) ? b : {},
+      bindingFilters: (f && typeof f === 'object' && !Array.isArray(f)) ? f : {},
+      expression: (chart && typeof chart.expression === 'string') ? chart.expression : '',
+      unit: (chart && typeof chart.unit === 'string') ? chart.unit : '',
+      startDate: (chart && typeof chart.startDate === 'string') ? chart.startDate : '',
+      endDate: (chart && typeof chart.endDate === 'string') ? chart.endDate : '',
+      template: (chart && typeof chart.template === 'string') ? chart.template : ''
+    };
+  }
+
+  function sha256hex(str) {
+    var bytes = new TextEncoder().encode(str);
+    return crypto.subtle.digest('SHA-256', bytes).then(function (buf) {
+      var arr = new Uint8Array(buf), s = '';
+      for (var i = 0; i < arr.length; i++) s += (arr[i] < 16 ? '0' : '') + arr[i].toString(16);
+      return s;
+    });
+  }
+
+  function loadMetrics() {
+    if (metricsCache) return Promise.resolve(metricsCache);
+    if (!metricsPromise) {
+      metricsPromise = realFetch(rel('api/metrics.json'), { cache: 'no-store' }).then(function (r) {
+        if (!r.ok) throw new Error('metrics ' + r.status);
+        return r.json();
+      }).then(function (m) { metricsCache = m; return m; });
+    }
+    return metricsPromise;
+  }
+
+  function loadSeries(hash) {
+    if (MAP && MAP.series && MAP.series.indexOf(hash) < 0)
+      return Promise.reject(new Error('snapshot miss'));
+    if (seriesCache[hash]) return seriesCache[hash];
+    seriesCache[hash] = realFetch(rel('api/series/' + hash + '.json'), { cache: 'no-store' }).then(function (r) {
+      if (!r.ok) throw new Error('series ' + r.status);
+      return r.json();
+    });
+    return seriesCache[hash].catch(function (error) { delete seriesCache[hash]; throw error; });
+  }
+
+  function handleBatch(bodyText) {
+    var request;
+    try { request = JSON.parse(bodyText); } catch (e) { return Promise.resolve(errRes(400, 'invalid JSON batch')); }
+    var charts = request && request.charts;
+    if (!Array.isArray(charts) || charts.length > 240) {
+      return Promise.resolve(errRes(400, 'charts must be an array of at most 240 items'));
+    }
+    return Promise.all(charts.map(function (c) {
+      if (!c || typeof c !== 'object' || Array.isArray(c)) {
+        return Promise.resolve({ ok: false, state: 'failed', error: 'invalid chart fields', result: null });
+      }
+      return sha256hex(canon(chartQuery(c))).then(function (hash) {
+        return loadSeries(hash).then(function (payload) {
+          return { ok: true, state: 'ready', key: hash, result: payload };
+        }, function () {
+          noteMiss('series:' + hash);
+          return { ok: false, state: 'failed', key: hash, error: 'snapshot miss', result: null };
+        });
+      });
+    })).then(function (results) {
+      return jsonRes({ ok: true, results: results, sourceVersion: CFG.sourceVersion });
+    });
+  }
+
+  window.fetch = function (input, init) {
+    var method = (init && init.method) || (input && typeof input === 'object' && input.method) || 'GET';
+    var url;
+    if (typeof input === 'string') url = input;
+    else if (input && typeof input === 'object' && typeof input.url === 'string') url = input.url;
+    else return realFetch(input, init);
+    var u;
+    try { u = new URL(url, document.baseURI); } catch (e) { return realFetch(input, init); }
+    if (u.origin !== location.origin) return realFetch(input, init);
+    var path;
+    try { path = decodeURIComponent(u.pathname); } catch (e) { return realFetch(input, init); }
+    if (path.indexOf('/api/') !== 0) return realFetch(input, init);
+
+    if (method.toUpperCase() === 'POST' && path === '/api/custom-series/batch') {
+      var body = init && init.body;
+      if (typeof body !== 'string') return Promise.resolve(errRes(400, 'invalid JSON batch'));
+      return loadMap().then(function () { return handleBatch(body); },
+        function () { return errRes(503, 'static map unavailable'); });
+    }
+    if (method.toUpperCase() !== 'GET' && method.toUpperCase() !== 'HEAD') {
+      return Promise.resolve(errRes(405, 'read-only service'));
+    }
+    if (path === '/api/health') {
+      return Promise.resolve(jsonRes({ ok: true, readOnly: true, sourceVersion: CFG.sourceVersion,
+        snapshotVersion: CFG.snapshotVersion, contentVersion: CFG.contentVersion, missCount: missCount }));
+    }
+    if (path === '/api/miss-report') {
+      return Promise.resolve(jsonRes({ ok: true, missCount: missCount,
+        misses: Object.keys(misses).map(function (key) { return {key: key, count: misses[key]}; })
+          .sort(function (a, b) { return b.count - a.count; }).slice(0, 100) }));
+    }
+    if (path === '/api/custom-metrics') {
+      var pairs = parsePairs(u.search), ids = [];
+      for (var i = 0; i < pairs.length; i++) {
+        if (pairs[i][0] !== 'ids') return Promise.resolve(errRes(404, 'snapshot miss'));
+        var raw = pairs[i][1].split(',');
+        for (var j = 0; j < raw.length; j++) if (raw[j]) ids.push(raw[j]);
+      }
+      if (!ids.length || ids.length > 300) {
+        return Promise.resolve(errRes(400, 'ids must contain 1 to 300 metric IDs'));
+      }
+      return loadMap().then(loadMetrics).then(function (payload) {
+        var metrics = (payload && typeof payload === 'object') ? payload.metrics : payload;
+        if (metrics && typeof metrics === 'object' && !Array.isArray(metrics)) metrics = Object.keys(metrics).map(function (k) { return metrics[k]; });
+        if (!Array.isArray(metrics)) return errRes(503, 'snapshot unavailable');
+        var wanted = {};
+        ids.forEach(function (id) { wanted[id] = true; });
+        return jsonRes({
+          ok: true,
+          metrics: metrics.filter(function (m) { return m && typeof m === 'object' && wanted[m.id]; })
+        });
+      }, function () { return errRes(503, 'snapshot unavailable'); });
+    }
+    var key = normKey(path, u.search);
+    return loadMap().then(function (m) {
+      var name = m.gets && m.gets[key];
+      if (!name) { noteMiss('get:' + key); return errRes(404, 'snapshot miss'); }
+      return realFetch(rel('api/gets/' + name + '.json'), { cache: 'no-store' });
+    }, function () { return errRes(503, 'static map unavailable'); });
+  };
+})();
+</script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="./dashboard.js?v=20261020a"></script>
+    <script type="module" src="./dashboard-futures-rubber-v1.js?v=20261016b"></script>
+    <script type="module" src="./dashboard-layout-shared-v2.js?v=20261019a"></script>
+    <script type="module" src="./dashboard-product-layout-shared-v2.js?v=20261019a"></script>
+    <script type="module" src="./dashboard-ui-v1.js?v=20261019a"></script>
+    <script type="module" src="./dashboard-overview-shared-v3.js?v=20261019b"></script>
+    <script type="module" src="./dashboard-thailand-v1.js?v=20261016b"></script>
+    <script type="module" src="./dashboard-vietnam-v1.js?v=20261016b"></script>
+    <script type="module" src="./dashboard-tire-layout-v1.js?v=20261016b"></script>
+    <script type="module" src="./dashboard-custom-v1.js?v=20261019b"></script>
+  </body>
+</html>

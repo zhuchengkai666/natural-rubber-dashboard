@@ -1,0 +1,14 @@
+.chart-panel .legend-item {
+  gap: 5px;
+  line-height: 1;
+}
+
+.chart-panel .legend-swatch {
+  width: 18px;
+  height: 2px;
+}
+
+.chart-panel .legend-swatch.bar {
+  width: 8px;
+  height: 10px;
+}

@@ -1,0 +1,11 @@
+.chart-grid-line { stroke: #dfe3e7; stroke-width: 1; }
+.chart-vertical-line { stroke: #eef1f3; stroke-width: 1; }
+.chart-axis-label { fill: #707880; font-family: "Cascadia Mono", Consolas, monospace; font-size: 10px; }
+.chart-axis-title { fill: #7d858d; font-family: "Cascadia Mono", Consolas, monospace; font-size: 9px; letter-spacing: .04em; }
+.chart-right-axis { stroke: #cdd3d8; stroke-width: 1; }
+.chart-zero-line { stroke: #c8ced4; stroke-width: 1; stroke-dasharray: 3 5; }
+.chart-yoy-bar { fill: #d5dadd; opacity: .88; }
+.chart-series { stroke-width: 1.8; stroke-linecap: square; stroke-linejoin: bevel; opacity: .58; }
+.chart-series.current { stroke-width: 3.8; opacity: 1; }
+.chart-series.comparison { stroke-width: 2.5; opacity: .82; }
+.chart-crosshair { stroke: #89939d; stroke-dasharray: 3 5; stroke-width: 1; opacity: .65; pointer-events: none; }

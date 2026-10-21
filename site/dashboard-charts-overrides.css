@@ -1,0 +1,27 @@
+.country-chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  min-height: 68px;
+  border-bottom: 0;
+}
+
+.country-chart-header h2 {
+  min-width: 0;
+  padding-right: 12px;
+}
+
+.country-chart-meta {
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  margin-top: 0;
+  text-align: right;
+}
+
+.country-chart-legend {
+  border-bottom: 0;
+}
+
+.seasonal-chart .chart-axis-title {
+  display: none;
+}

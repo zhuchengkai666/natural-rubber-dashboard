@@ -1,0 +1,13 @@
+.subnav[aria-label="其他国家进出口"] {
+  max-height: min(29vh, 260px);
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+
+.subnav[aria-label="其他国家进出口"]::-webkit-scrollbar {
+  width: 4px;
+}
+
+.subnav[aria-label="其他国家进出口"]::-webkit-scrollbar-thumb {
+  background: var(--line);
+}
