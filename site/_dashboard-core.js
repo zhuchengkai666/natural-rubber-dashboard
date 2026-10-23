@@ -79,7 +79,7 @@ function formatRate(value) {
 function getRoute() {
   const raw = window.location.hash.replace(/^#\/?/, "");
   const parts = raw.split("?")[0].split("/");
-  const known = Boolean(routeMeta[parts[0]]) || window.dashboardNavigationHasRoute?.(parts[0]);
+  const known = parts[0] !== "custom_analysis" && (Boolean(routeMeta[parts[0]]) || window.dashboardNavigationHasRoute?.(parts[0]));
   if (!known) {
     window.history.replaceState(window.history.state, "", window.location.pathname + window.location.search + "#futures_rubber");
     parts.splice(0, parts.length, "futures_rubber");

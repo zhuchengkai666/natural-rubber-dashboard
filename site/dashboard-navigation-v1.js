@@ -52,7 +52,7 @@ function nodes() {
   }
   const roots = new Set(result.filter(n=>!n.parentId).map(n=>n.id));
   for (const n of result) if (n.parentId && !roots.has(n.parentId)) n.parentId='custom_analysis';
-  return result;
+  return result.filter(n => n.id !== 'custom_analysis' && n.parentId !== 'custom_analysis' && String(n.route || '').split('/')[0] !== 'custom_analysis');
 }
 window.customNavigationRoots = () => nodes().filter(n=>!n.parentId);
 window.dashboardNavigationHasRoute = primary => nodes().some(n => String(n.route || '').split('/')[0] === primary && Boolean(primary));

@@ -1,5 +1,5 @@
 import { registerEditableChart } from "./dashboard-editable-chart-runtime-v1.js?v=20260914a";
-import { availableRankDates, availableRankContracts, rankGroupHasContent, rankDateAfterLoad } from "./dashboard-position-rank-dates-v1.js?v=20261021b";
+import { availableRankDates, availableRankContracts, rankGroupHasContent, rankDateAfterLoad } from "./dashboard-position-rank-dates-v1.js?v=20261022a";
 
 const rankApp = document.querySelector("#app");
 let rankData = null;
@@ -171,25 +171,25 @@ function rankContractOptions(product, date) {
   return [
     { value: "MAIN", label: mainContract ? "主力合约（" + mainContract + "）" : "主力合约" },
     { value: "ALL", label: "全部已披露合约" },
-    ...availableRankContracts(rankData, product?.code, date).map((code) => ({ value: code, label: code })),
+    ...availableRankContracts(rankData, product?.code).map((code) => ({ value: code, label: code })),
   ];
 }
 
-function rankAvailableDates(productCode) {
-  return availableRankDates(rankData, productCode);
+function rankAvailableDates(productCode, contractCode = "ALL") {
+  return availableRankDates(rankData, productCode, contractCode);
 }
 
-function rankMembers(productCode, date) {
-  const ordered = rankAllRows(productCode, date).map((row) => row.member);
-  if (ordered.length) return ordered;
-  const set = new Set();
-  for (const group of rankGroups(productCode, "", "ALL")) {
+function rankMembers(productCode, date, contractCode = "ALL") {
+  const ordered = rankAllRows(productCode, date, "", contractCode).map((row) => row.member);
+  if (ordered.length && ["MAIN", "ALL"].includes(contractCode)) return ordered;
+  const set = new Set(ordered);
+  for (const group of rankGroups(productCode, "", contractCode === "MAIN" ? "ALL" : contractCode)) {
     for (const row of rankGroupRows(group)) {
       if (row.longMember) set.add(row.longMember);
       if (row.shortMember) set.add(row.shortMember);
     }
   }
-  return [...set].sort((left, right) => left.localeCompare(right, "zh-CN"));
+  return [...ordered, ...[...set].filter(member => !ordered.includes(member)).sort((left, right) => left.localeCompare(right, "zh-CN"))];
 }
 
 function rankSingleRows(productCode, date, contractCode) {
@@ -201,9 +201,9 @@ function rankSingleRows(productCode, date, contractCode) {
   });
 }
 
-function rankAllRows(productCode, date, memberFilter = "") {
+function rankAllRows(productCode, date, memberFilter = "", contractCode = "ALL") {
   const aggregate = new Map();
-  for (const group of rankGroups(productCode, date, "ALL")) {
+  for (const group of rankGroups(productCode, date, contractCode)) {
     for (const row of rankGroupRows(group)) {
       for (const side of ["long", "short"]) {
         const member = side === "long" ? row.longMember : row.shortMember;
@@ -315,7 +315,7 @@ function rankNetTableMarkup(product, date, contractCode) {
 }
 
 function rankHistory(productCode, contractCode, member) {
-  const dates = [...new Set((rankData?.coverage || []).filter((item) => item.productCode === productCode && item.status !== "source_unavailable").map((item) => item.date))].sort();
+  const dates = rankAvailableDates(productCode, contractCode).reverse();
   return dates.map((date) => {
     let long = null; let short = null; let longSeen = false; let shortSeen = false;
     for (const group of rankGroups(productCode, date, contractCode)) {
@@ -446,11 +446,12 @@ function rankMemberMarkup(members, value, search) {
 
 function rankPageMarkup() {
   const product = rankProduct(rankState.productCode);
-  const dates = rankAvailableDates(product?.code);
+  if (!["MAIN", "ALL"].includes(rankState.contractCode) && !availableRankContracts(rankData, product?.code).includes(rankState.contractCode)) rankState.contractCode = "MAIN";
+  const dates = rankAvailableDates(product?.code, rankState.contractCode);
   if (!dates.includes(rankState.date)) rankState.date = dates[0] || "";
   const contracts = rankContractOptions(product, rankState.date);
   if (!contracts.some((item) => item.value === rankState.contractCode)) rankState.contractCode = "MAIN";
-  const members = rankMembers(product?.code, rankState.date);
+  const members = rankMembers(product?.code, rankState.date, rankState.contractCode);
   if (!members.includes(rankState.member)) {
     rankState.member = members[0] || "";
     rankState.memberSearch = "";
@@ -576,7 +577,7 @@ async function loadRankData({ followLatest = false } = {}) {
   if (!rankLoadPromise) {
   rankLoadPromise = fetch("./data/futures-rubber-position-rank-data.json?v=20260921b", { cache: "no-store" })
       .then((response) => response.ok ? response.json() : Promise.reject(new Error("futures-rubber-position-rank-data.json HTTP " + response.status)))
-      .then((data) => { rankData = data; rankState.date = rankDateAfterLoad(data, rankState.productCode, rankState.date, followLatest); window.positionRankUiData = data; rankRenderPage(); window.dispatchEvent(new Event("position-rank-data-ready")); return data; });
+      .then((data) => { rankData = data; rankState.date = rankDateAfterLoad(data, rankState.productCode, rankState.date, followLatest, rankState.contractCode); window.positionRankUiData = data; rankRenderPage(); window.dispatchEvent(new Event("position-rank-data-ready")); return data; });
   }
   return rankLoadPromise;
 }
