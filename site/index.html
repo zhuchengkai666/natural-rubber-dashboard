@@ -13,7 +13,7 @@
     <link rel="stylesheet" href="./dashboard-custom-v1.css?v=20261019a" />
     <link rel="stylesheet" href="./dashboard-weather-tracking-v1.css?v=20261021e" />
   <link rel="icon" href="data:,">
-<script>var CFG={"contentVersion":"e8b63e2e9e10d4e5403c9947","snapshotVersion":"de33da9fe0843eefb912","sourceVersion":"87196071d897b86a2b5fb0c862e712d8b33d276d28e129e181c29bbca59fca88"};
+<script>var CFG={"contentVersion":"89478c935aff72554b733fd0","snapshotVersion":"de33da9fe0843eefb912","sourceVersion":"87196071d897b86a2b5fb0c862e712d8b33d276d28e129e181c29bbca59fca88"};
 /* 静态托管 fetch 兜底层：把 /api/* 请求映射到预渲染的静态 JSON。
  * 由 build_static.py 内联注入 index.html <head>，在任何 module 脚本之前执行。
  * CFG 由构建脚本注入（sourceVersion / snapshotVersion）。 */
@@ -230,7 +230,9 @@
   };
 })();
 </script>
-  </head>
+  <link rel="stylesheet" href="./dashboard-merit-v1.css?v=20261026b">
+<script type="module" src="./dashboard-merit-v1.js?v=20261026b"></script>
+</head>
   <body>
     <div id="app"></div>
     <script type="module" src="./dashboard.js?v=20261022a"></script>
