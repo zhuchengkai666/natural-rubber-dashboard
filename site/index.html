@@ -14,7 +14,7 @@
     <link rel="stylesheet" href="./dashboard-weather-tracking-v1.css?v=20261021e" />
     <link rel="stylesheet" href="./dashboard-merit-v1.css?v=20261026c" />
   <link rel="icon" href="data:,">
-<script>var CFG={"assets":{"data/dashboard-data.json":{"bytes":1437262,"path":"data/dashboard-data.abcf6ddb83a43a76590bc5c3.json","sha256":"abcf6ddb83a43a76590bc5c3dd07f16f22cf3df221db0d9551640ff2afb2f3c2"},"data/futures-rubber-data.json":{"bytes":8924246,"path":"data/futures-rubber-data.0e8bac36a24ba431e5dd2067.json","sha256":"0e8bac36a24ba431e5dd206765458291a0f0700094ff92bf3e7cf14cbe6d99ef"},"data/futures-rubber-position-rank-data.json":{"bytes":1965048,"path":"data/futures-rubber-position-rank-data.fcb62383a86132734e5320a0.json","sha256":"fcb62383a86132734e5320a0e933b4f8ce562e6af8052db07995dd47b3fa7d83"},"data/producer-country-trade-data-v3.json":{"bytes":4988971,"path":"data/producer-country-trade-data-v3.6f0835520a5f02deca41ba5b.json","sha256":"6f0835520a5f02deca41ba5b625f7084344de157291d10788d13aac36e7be8d7"},"data/thailand-trade-data-v2.json":{"bytes":1366976,"path":"data/thailand-trade-data-v2.df976701a66b69b240a5c782.json","sha256":"df976701a66b69b240a5c7825ee1b7bad8cac469039b1c2df8255f10378ca0cf"},"data/tire-export-data.json":{"bytes":627134,"path":"data/tire-export-data.9293e9d94bf4d83b3062a1f4.json","sha256":"9293e9d94bf4d83b3062a1f47a423ce859e6b6fcd66b23aa407f4842d0500371"},"data/vietnam-trade-data-v2.json":{"bytes":1626130,"path":"data/vietnam-trade-data-v2.ced5d04bcf8c96f64b780326.json","sha256":"ced5d04bcf8c96f64b7803266e81e941c7c5b8762de4b6cec24d730fe956f1aa"}},"contentVersion":"ca3346720246d9b9ec762c48","map":{"bytes":147291,"path":"api/map.ca3346720246d9b9ec762c48.json","sha256":"2960b8b514ae82140de98b9d109382e85b62d19de05ee52ba966c417ea5a944e"},"snapshotVersion":"42891e59c11b32a82c42","sourceVersion":"1c728b45674424b3963388bdc0975a2ff3819aeae57d290acb19cd6c48a67abb"};
+<script>var CFG={"assets":{"data/dashboard-data.json":{"bytes":1437262,"path":"data/dashboard-data.abcf6ddb83a43a76590bc5c3.json","sha256":"abcf6ddb83a43a76590bc5c3dd07f16f22cf3df221db0d9551640ff2afb2f3c2"},"data/futures-rubber-data.json":{"bytes":8924246,"path":"data/futures-rubber-data.0e8bac36a24ba431e5dd2067.json","sha256":"0e8bac36a24ba431e5dd206765458291a0f0700094ff92bf3e7cf14cbe6d99ef"},"data/futures-rubber-position-rank-data.json":{"bytes":1965048,"path":"data/futures-rubber-position-rank-data.fcb62383a86132734e5320a0.json","sha256":"fcb62383a86132734e5320a0e933b4f8ce562e6af8052db07995dd47b3fa7d83"},"data/producer-country-trade-data-v3.json":{"bytes":4988971,"path":"data/producer-country-trade-data-v3.6f0835520a5f02deca41ba5b.json","sha256":"6f0835520a5f02deca41ba5b625f7084344de157291d10788d13aac36e7be8d7"},"data/thailand-trade-data-v2.json":{"bytes":1366976,"path":"data/thailand-trade-data-v2.df976701a66b69b240a5c782.json","sha256":"df976701a66b69b240a5c7825ee1b7bad8cac469039b1c2df8255f10378ca0cf"},"data/tire-export-data.json":{"bytes":627134,"path":"data/tire-export-data.9293e9d94bf4d83b3062a1f4.json","sha256":"9293e9d94bf4d83b3062a1f47a423ce859e6b6fcd66b23aa407f4842d0500371"},"data/vietnam-trade-data-v2.json":{"bytes":1626130,"path":"data/vietnam-trade-data-v2.ced5d04bcf8c96f64b780326.json","sha256":"ced5d04bcf8c96f64b7803266e81e941c7c5b8762de4b6cec24d730fe956f1aa"}},"contentVersion":"4217b03118263d59e26a3074","map":{"bytes":147291,"path":"api/map.4217b03118263d59e26a3074.json","sha256":"344d5d2aa4ace5f1ee20bbe585cd1bd49f1181e019726257339edbe52290c9eb"},"snapshotVersion":"42891e59c11b32a82c42","sourceVersion":"1c728b45674424b3963388bdc0975a2ff3819aeae57d290acb19cd6c48a67abb"};
 /* Versioned, verified static transport. No service worker, business writes or counter access. */
 (function () {
   'use strict';
@@ -23,7 +23,7 @@
   var prefix = 'rubber-static-content-v1-' + encodeURIComponent(base.pathname) + '-';
   var cacheName = prefix + CFG.contentVersion;
   var jobs = new Map(), parsed = new Map(), queue = [];
-  var active = 0, idleTimer, manifest = null, warming = false, warmPromise;
+  var active = 0, backgroundActive = 0, idleTimer, manifest = null, warming = false, warmPromise;
   var foreground = 0, sequence = 0;
   var stats = {network: 0, persistentHits: 0, memoryHits: 0, completed: 0, total: 0,
     ready: false, persistent: typeof caches !== 'undefined', errors: [], foregroundFirst: true};
@@ -102,15 +102,19 @@
   function pump() {
     queue.sort(function (a, b) { return a.priority - b.priority || a.order - b.order; });
     while (active < 2) {
-      var position = queue.findIndex(function (job) { return job.priority === 0 || (warming && !document.hidden); });
+      // Background downloads may stall on a slow route. Always reserve one
+      // slot for a newly selected page instead of waiting for the warmup.
+      var position = queue.findIndex(function (job) { return job.priority === 0 || (warming && !document.hidden && backgroundActive < 1); });
       if (position < 0) break;
       var job = queue.splice(position, 1)[0];
-      active++; job.started = true;
+      active++; job.started = true; job.backgroundSlot = job.priority !== 0;
+      if (job.backgroundSlot) backgroundActive++;
       (function (job) {
         download(job.item).then(function (response) { job.done = true; job.resolve(response); }, function (error) {
           jobs.delete(job.item.path); job.reject(error);
         }).finally(function () {
-          active--; if (job.priority === 0) foreground--;
+          active--; if (job.backgroundSlot) backgroundActive--;
+          if (job.priority === 0) foreground--;
           progress(); pump(); scheduleWarm();
         });
       })(job);
