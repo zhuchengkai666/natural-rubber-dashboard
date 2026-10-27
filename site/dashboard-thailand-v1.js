@@ -1,5 +1,5 @@
 import { installChartTemplateStyles } from "./三分之一尺寸折线图-同比模板/chart-core.js?v=20260902b";
-import { renderEditableMonthlyChart } from "./dashboard-editable-chart-runtime-v2.js?v=20261016b";
+import { renderEditableMonthlyChart } from "./dashboard-editable-chart-runtime-v2.js?v=20261026a";
 import { compactTableDisplayNote, compactTableUnitLabel } from "./dashboard-table-utils-v1.js?v=20260822c";
 
 const thailandApp = document.querySelector("#app");

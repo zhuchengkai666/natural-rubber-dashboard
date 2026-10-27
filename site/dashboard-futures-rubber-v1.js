@@ -1,4 +1,4 @@
-import { renderEditableDailyChart } from "./dashboard-editable-chart-runtime-v2.js?v=20261016b";
+import { renderEditableDailyChart } from "./dashboard-editable-chart-runtime-v2.js?v=20261026a";
 
 const futuresApp = document.querySelector("#app");
 let futuresData = null;

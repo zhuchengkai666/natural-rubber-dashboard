@@ -1,5 +1,5 @@
 import { currentYearAverage, shouldShowChartSeries, CHART_VISIBILITY_RULES } from "./三分之一尺寸折线图-同比模板/chart-core.js?v=20260902b";
-import { renderEditableMonthlyChart } from "./dashboard-editable-chart-runtime-v2.js?v=20261019a";
+import { renderEditableMonthlyChart } from "./dashboard-editable-chart-runtime-v2.js?v=20261026a";
 import { wanTFromKt, wanTSeriesFromKt } from "./dashboard-mass-unit-v1.js";
 const overviewRoot = document.querySelector("#app");
 let overviewState = null;

@@ -3,9 +3,12 @@ import {
   renderSeasonalChart,
 } from "./三分之一尺寸折线图-同比模板/chart-core.js?v=20261019a";
 
-const editableChartRegistry = new WeakMap();
+// Different cache-busting URLs must share registrations with the page editor.
+const runtimeKey = Symbol.for('rubber.dashboard.chart-runtime.v2');
+const runtimeState = window[runtimeKey] ||= {registry:new WeakMap(),activeCards:new Map(),watchersInstalled:false};
+const editableChartRegistry = runtimeState.registry;
 import { requestChartSeries, systemChartDefinitions, chartTemplateOptions, chartTooltipModel } from './dashboard-chart-data-v1.js?v=20260916j';
-const activeCards = new Map();
+const activeCards = runtimeState.activeCards;
 
 function cleanDefinition(card, definition = {}) {
   const title = String(definition.title || card?.querySelector("h2")?.textContent || "").trim();
@@ -210,9 +213,6 @@ function bindDefinition(card, definition) {
     metrics,
     parameters:{...current?.parameters,template:definition.chart.template}});
 }
-
-
-
 
 
 

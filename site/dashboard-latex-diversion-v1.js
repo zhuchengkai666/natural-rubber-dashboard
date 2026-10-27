@@ -1,5 +1,5 @@
 import { installChartTemplateStyles } from "./三分之一尺寸折线图-同比模板/chart-core.js?v=20261019a";
-import { renderEditableMonthlyChart } from "./dashboard-editable-chart-runtime-v2.js?v=20261019a";
+import { renderEditableMonthlyChart } from "./dashboard-editable-chart-runtime-v2.js?v=20261026a";
 
 const diversionApp = document.querySelector("#app");
 const diversionGroups = [

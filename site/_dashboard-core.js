@@ -14,6 +14,10 @@ function dashboardEscapeHtml(value) {
 }
 
 const routeMeta = {
+  china_butadiene: { title: '中国丁二烯进出口', kicker: 'SYNTHETIC / CHINA BD', description: '', synthetic: true },
+  korea_butadiene: { title: '韩国丁二烯进出口', kicker: 'SYNTHETIC / KOREA BD', description: '', synthetic: true },
+  china_synthetic_rubber: { title: '中国合成橡胶进出口', kicker: 'SYNTHETIC / CHINA BR + SBR', description: '', synthetic: true },
+  korea_synthetic_rubber: { title: '韩国合成橡胶进出口', kicker: 'SYNTHETIC / KOREA BR + SBR', description: '', synthetic: true },
   futures_rubber: { title: "月差/持仓", kicker: "01 / FUTURES RUBBER", description: "用天然橡胶、20号胶和丁二烯橡胶的日度月差与持仓序列观察季节性。" },
   futures_position_rank: { title: "持仓龙虎榜", kicker: "02 / POSITION RANK", description: "仅展示 RU、NR、BR 各合约前 20 名会员的多空持仓及日增减，缺失数据不补零。" },
   weather_history: { title: "历史天气情况", kicker: "03 / WEATHER TRACKING", description: "" },
@@ -79,7 +83,7 @@ function formatRate(value) {
 function getRoute() {
   const raw = window.location.hash.replace(/^#\/?/, "");
   const parts = raw.split("?")[0].split("/");
-  const known = parts[0] !== "custom_analysis" && (Boolean(routeMeta[parts[0]]) || window.dashboardNavigationHasRoute?.(parts[0]));
+  const known = (parts[0] !== "custom_analysis" || [].includes(parts[1])) && (Boolean(routeMeta[parts[0]]) || window.dashboardNavigationHasRoute?.(parts[0]));
   if (!known) {
     window.history.replaceState(window.history.state, "", window.location.pathname + window.location.search + "#futures_rubber");
     parts.splice(0, parts.length, "futures_rubber");
@@ -189,7 +193,7 @@ function shellMarkup(route) {
     : route.selected ? "查看 " + route.selected.label + " 的中国进口趋势与同比变化。" : meta.description;
   const pageKicker = route.selected ? meta.kicker + " / " + route.selected.label : meta.kicker;
   const latestHeader = isCustom ? "实时查询" : isPositionRank ? (window.positionRankUiData?.latestDate || "—") : isWeatherHistory ? "打开时读取" : isWeatherDriver ? "最新已同步" : dashboardData.latestMonth;
-  const introUnit = isWeatherHistory ? "IMAGE" : isWeatherDriver ? "AI" : isCustom ? "AUTO" : isPositionRank ? "手" : ["overview", "countries", "products", "latex_diversion_observation"].includes(route.primary) ? "万吨" : "kt";
+  const introUnit = isWeatherHistory ? "IMAGE" : isWeatherDriver ? "AI" : isCustom ? "AUTO" : isPositionRank ? "手" : meta.synthetic || ["overview", "countries", "products", "latex_diversion_observation"].includes(route.primary) ? "万吨" : "kt";
   const introNote = isWeatherHistory ? "LOCAL / LATEST FILE" : isWeatherDriver ? "基于已同步图表" : isCustom ? "DUCKDB / FORMULA / LINE" : isPositionRank ? "DAILY / LONG / SHORT / NET" : "MONTHLY / YTD / YOY";
   const introStamp = isWeatherDriver
     ? '<div class="intro-stamp weather-driver-actions"><small data-weather-last-updated>最后成功更新：读取中</small><small data-weather-refresh-status role="status" aria-live="polite"></small></div>'
@@ -200,12 +204,12 @@ function shellMarkup(route) {
   return '<div class="app-shell">' +
     '<aside class="sidebar"><a class="brand" href="#futures_rubber"><span class="brand-mark">R</span><span><strong>RUBBER</strong><small>RUBBER DATA DASHBOARD</small></span></a>' +
       '<div class="sidebar-rule"></div><p class="sidebar-label">ANALYSIS</p><nav class="main-nav" aria-label="主导航">' + navMarkup(route) + '</nav>' +
-      '<div class="sidebar-bottom"><div class="status-line"><span class="status-dot"></span><span>WAREHOUSE READY</span></div><p>Customs data monitor<br />Rubber / tire / other series</p></div>' +
     '</aside><main class="main-content' + (isWeatherHistory ? ' weather-history-main' : '') + '">' + headerMarkup +
       '<div class="content-wrap">' + introMarkup + renderPage(route) + '</div></main></div>';
 }
 
 function renderPage(route) {
+  if (routeMeta[route.primary]?.synthetic) return '<section class="synthetic-trade-page-host" aria-label="' + dashboardEscapeHtml(routeMeta[route.primary].title) + '"><div class="data-loading">正在读取进出口数据…</div></section>';
   if (route.primary === "futures_rubber") return futuresRubberPage();
   if (route.primary === "futures_position_rank") return futuresPositionRankPage();
   if (route.primary === "weather_history") return '<section class="weather-history-page-host" aria-label="历史天气情况"><img data-weather-original data-clipboard-src="/api/weather/latest-image?format=png" src="./weather-history.jpg?v=' + Date.now() + '" alt="最新CPC橡胶天气日报" loading="eager"></section>';
@@ -298,7 +302,9 @@ function render() {
   const route = getRoute();
   app.innerHTML = shellMarkup(route);
   bindNavigation();
-  document.title = route.primary === "futures_rubber"
+  document.title = routeMeta[route.primary]?.synthetic
+      ? routeMeta[route.primary].title + '｜RUBBER DASHBOARD'
+      : route.primary === "futures_rubber"
       ? "月差/持仓｜RUBBER DASHBOARD"
       : route.primary === "tire_export"
       ? "中国轮胎出口｜RUBBER DASHBOARD"

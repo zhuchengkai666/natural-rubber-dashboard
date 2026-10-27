@@ -14,6 +14,11 @@ const builtin = [
       ['indonesia','印尼'],['malaysia','马来西亚'],['cote_divoire','科特迪瓦'],['united_states','美国'],
       ['european_union','欧盟'],['india','印度'],['japan','日本'],['south_korea','韩国']]
       .map(([id,label])=>[id,label,'producer_export',id]),
+  ['synthetic_trade','合成/丁二烯进出口','',''],
+  ['china_butadiene','中国丁二烯','synthetic_trade','china_butadiene'],
+  ['korea_butadiene','韩国丁二烯','synthetic_trade','korea_butadiene'],
+  ['china_synthetic_rubber','中国合成橡胶','synthetic_trade','china_synthetic_rubber'],
+  ['korea_synthetic_rubber','韩国合成橡胶','synthetic_trade','korea_synthetic_rubber'],
   ['custom_analysis','自定义分析','','custom_analysis'],
 ].map(([id,label,parentId,route])=>({id,label,parentId,route}));
 let navigation = {nodes:[],revision:''};
@@ -29,7 +34,17 @@ function nodes() {
   const pages = (window.customDashboardPages || []).filter(p=>!p.isDeleted);
   const pageIds = new Set(pages.map(p=>'page-'+p.id));
   const result = navigation.nodes.filter(n=>!n.id.startsWith('page-') || pageIds.has(n.id)).map(n=>({...n}));
+  for (const n of result) if (n.id==='synthetic_trade' && n.label==='合成胶/丁二烯进出口') n.label='合成/丁二烯进出口';
   for (const n of builtin) if (!result.some(x=>x.id===n.id)) {
+    if (n.id === 'synthetic_trade') {
+      const producerIndex = result.findIndex(x=>x.id==='producer_export');
+      if (producerIndex >= 0) { result.splice(producerIndex + 1, 0, {...n}); continue; }
+    }
+    if (n.parentId === 'synthetic_trade') {
+      const siblings = result.map((x,i)=>x.parentId==='synthetic_trade'?i:-1).filter(i=>i>=0);
+      result.splice(siblings.length ? siblings.at(-1)+1 : result.findIndex(x=>x.id==='synthetic_trade')+1,0,{...n});
+      continue;
+    }
     if (n.id === 'weather_tracking') {
       const rankIndex = result.findIndex(x=>x.id==='futures_position_rank');
       if (rankIndex >= 0) { result.splice(rankIndex + 1, 0, {...n}); continue; }
@@ -52,7 +67,7 @@ function nodes() {
   }
   const roots = new Set(result.filter(n=>!n.parentId).map(n=>n.id));
   for (const n of result) if (n.parentId && !roots.has(n.parentId)) n.parentId='custom_analysis';
-  return result.filter(n => n.id !== 'custom_analysis' && n.parentId !== 'custom_analysis' && String(n.route || '').split('/')[0] !== 'custom_analysis');
+  const excluded = new Set(['custom_analysis']); let changed = true; while(changed) { changed = false; for(const n of result) if(excluded.has(n.parentId) && !excluded.has(n.id)) { excluded.add(n.id); changed = true; } } return result.filter(n => !excluded.has(n.id));
 }
 window.customNavigationRoots = () => nodes().filter(n=>!n.parentId);
 window.dashboardNavigationHasRoute = primary => nodes().some(n => String(n.route || '').split('/')[0] === primary && Boolean(primary));
