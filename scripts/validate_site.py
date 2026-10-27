@@ -29,10 +29,25 @@ def validate(site):
         assert not file.name.startswith('.env'), 'environment file is forbidden'
         total += len(raw)
     assert total <= 60_000_000, 'site exceeds 60MB budget'
-    for name in mapping['gets'].values():
-        assert 'api/gets/' + name + '.json' in actual, 'GET mapping missing file'
-    for key in mapping['series']:
-        assert 'api/series/' + key + '.json' in actual, 'series mapping missing file'
+    if mapping.get('v', 1) >= 2:
+        delivery = mapping['delivery']
+        for item in delivery['resources'] + list(delivery['assets'].values()):
+            assert item['path'] in actual, 'delivery resource missing'
+            raw = (site / item['path']).read_bytes()
+            assert len(raw) == item['bytes'] and hashlib.sha256(raw).hexdigest() == item['sha256'], 'delivery hash mismatch'
+        packs = {item['path']: json.loads((site / item['path']).read_text(encoding='utf-8')) for item in delivery['resources']}
+        assert set(packs[delivery['bootstrap']]['gets']) == set(mapping['gets'].values()), 'GET bundle coverage mismatch'
+        assert 'metrics' in packs[delivery['bootstrap']], 'metrics missing'
+        assert set(delivery['seriesPacks']) == set(mapping['series']), 'series index mismatch'
+        expected = {}
+        for key, name in delivery['seriesPacks'].items():
+            expected.setdefault(name, set()).add(key)
+        assert all(name in packs and set(packs[name]['series']) == keys for name, keys in expected.items()), 'series bundle coverage mismatch'
+    else:
+        for name in mapping['gets'].values():
+            assert 'api/gets/' + name + '.json' in actual, 'GET mapping missing file'
+        for key in mapping['series']:
+            assert 'api/series/' + key + '.json' in actual, 'series mapping missing file'
     print(json.dumps({'status': 'PASS', 'files': len(actual), 'bytes': total, 'contentVersion': version['contentVersion']}))
 
 

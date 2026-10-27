@@ -14,7 +14,180 @@
     <link rel="stylesheet" href="./dashboard-weather-tracking-v1.css?v=20261021e" />
     <link rel="stylesheet" href="./dashboard-merit-v1.css?v=20261026c" />
   <link rel="icon" href="data:,">
-<script>var CFG={"contentVersion":"4c194ae90bf93159cb67fd28","snapshotVersion":"42891e59c11b32a82c42","sourceVersion":"1c728b45674424b3963388bdc0975a2ff3819aeae57d290acb19cd6c48a67abb"};
+<script>var CFG={"assets":{"data/dashboard-data.json":{"bytes":1437262,"path":"data/dashboard-data.abcf6ddb83a43a76590bc5c3.json","sha256":"abcf6ddb83a43a76590bc5c3dd07f16f22cf3df221db0d9551640ff2afb2f3c2"},"data/futures-rubber-data.json":{"bytes":8924246,"path":"data/futures-rubber-data.0e8bac36a24ba431e5dd2067.json","sha256":"0e8bac36a24ba431e5dd206765458291a0f0700094ff92bf3e7cf14cbe6d99ef"},"data/futures-rubber-position-rank-data.json":{"bytes":1965048,"path":"data/futures-rubber-position-rank-data.fcb62383a86132734e5320a0.json","sha256":"fcb62383a86132734e5320a0e933b4f8ce562e6af8052db07995dd47b3fa7d83"},"data/producer-country-trade-data-v3.json":{"bytes":4988971,"path":"data/producer-country-trade-data-v3.6f0835520a5f02deca41ba5b.json","sha256":"6f0835520a5f02deca41ba5b625f7084344de157291d10788d13aac36e7be8d7"},"data/thailand-trade-data-v2.json":{"bytes":1366976,"path":"data/thailand-trade-data-v2.df976701a66b69b240a5c782.json","sha256":"df976701a66b69b240a5c7825ee1b7bad8cac469039b1c2df8255f10378ca0cf"},"data/tire-export-data.json":{"bytes":627134,"path":"data/tire-export-data.9293e9d94bf4d83b3062a1f4.json","sha256":"9293e9d94bf4d83b3062a1f47a423ce859e6b6fcd66b23aa407f4842d0500371"},"data/vietnam-trade-data-v2.json":{"bytes":1626130,"path":"data/vietnam-trade-data-v2.ced5d04bcf8c96f64b780326.json","sha256":"ced5d04bcf8c96f64b7803266e81e941c7c5b8762de4b6cec24d730fe956f1aa"}},"contentVersion":"ca3346720246d9b9ec762c48","map":{"bytes":147291,"path":"api/map.ca3346720246d9b9ec762c48.json","sha256":"2960b8b514ae82140de98b9d109382e85b62d19de05ee52ba966c417ea5a944e"},"snapshotVersion":"42891e59c11b32a82c42","sourceVersion":"1c728b45674424b3963388bdc0975a2ff3819aeae57d290acb19cd6c48a67abb"};
+/* Versioned, verified static transport. No service worker, business writes or counter access. */
+(function () {
+  'use strict';
+  var fetchOriginal = window.fetch.bind(window);
+  var base = new URL('.', document.baseURI);
+  var prefix = 'rubber-static-content-v1-' + encodeURIComponent(base.pathname) + '-';
+  var cacheName = prefix + CFG.contentVersion;
+  var jobs = new Map(), parsed = new Map(), queue = [];
+  var active = 0, idleTimer, manifest = null, warming = false, warmPromise;
+  var foreground = 0, sequence = 0;
+  var stats = {network: 0, persistentHits: 0, memoryHits: 0, completed: 0, total: 0,
+    ready: false, persistent: typeof caches !== 'undefined', errors: [], foregroundFirst: true};
+  var cachePromise = null;
+
+  function url(item) { return new URL(item.path, base).href; }
+  function sha(bytes) {
+    return crypto.subtle.digest('SHA-256', bytes).then(function (hash) {
+      return Array.from(new Uint8Array(hash)).map(function (b) { return b.toString(16).padStart(2, '0'); }).join('');
+    });
+  }
+  function valid(item) {
+    var address = new URL(item.path, base);
+    if (address.origin !== base.origin || !address.pathname.startsWith(base.pathname) ||
+        !/^[a-f0-9]{64}$/.test(item.sha256)) throw Error('invalid static resource');
+    return item;
+  }
+  function cache() {
+    if (!cachePromise) cachePromise = Promise.resolve().then(function () {
+      return typeof caches === 'undefined' ? null : caches.open(cacheName);
+    }).catch(function () { stats.persistent = false; return null; });
+    return cachePromise;
+  }
+  async function checked(response, item) {
+    if (!response.ok) throw Error('static resource HTTP ' + response.status);
+    var raw = await response.arrayBuffer();
+    if (raw.byteLength !== item.bytes || await sha(raw) !== item.sha256) throw Error('static content mismatch; reload required');
+    return new Response(raw, {headers: {'Content-Type': 'application/json; charset=utf-8'}});
+  }
+  async function download(item) {
+    var store = await cache(), address = url(item), response;
+    if (store) {
+      try {
+        var names = (await caches.keys()).filter(function (name) { return name.startsWith(prefix); }).reverse();
+        names = [cacheName].concat(names.filter(function (name) { return name !== cacheName; }).slice(0, 1));
+        for (var name of names) {
+          var old = await caches.open(name);
+          response = await old.match(address);
+          if (response) {
+            try { response = await checked(response, item); stats.persistentHits++; break; }
+            catch (_) { await old.delete(address); response = null; }
+          }
+        }
+      } catch (_) { stats.persistent = false; response = null; }
+    }
+    if (!response) {
+      // A stale intermediary response must never masquerade as the new version.
+      for (var attempt = 0; attempt < 2; attempt++) {
+        stats.network++;
+        try { response = await checked(await fetchOriginal(address, {cache: attempt ? 'reload' : 'force-cache'}), item); break; }
+        catch (error) { if (attempt) throw error; }
+      }
+    }
+    if (store) {
+      try { await store.put(address, response.clone()); }
+      catch (_) { stats.persistent = false; }
+    } else stats.persistent = false;
+    return response;
+  }
+  function progress() {
+    if (!warming || !manifest) return;
+    var items = allResources();
+    stats.total = items.length;
+    stats.completed = items.filter(function (item) { return jobs.get(item.path)?.done; }).length;
+    if (!document.body || document.hidden) return;
+    var status = document.querySelector('#static-preload-status');
+    if (!status) {
+      status = document.createElement('span'); status.id = 'static-preload-status';
+      status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
+      status.style.cssText = 'position:fixed;right:12px;bottom:8px;z-index:20;font:11px Arial,sans-serif;color:#666;background:rgba(255,255,255,.92);padding:3px 7px;pointer-events:none';
+      document.body.append(status);
+    }
+    status.textContent = stats.ready ? (stats.persistent ? '其他页面已缓存' : '本次查看数据已就绪') :
+      stats.errors.length ? '部分页面数据待重试' : '正在准备其他页面 ' + stats.completed + '/' + stats.total;
+  }
+  function pump() {
+    queue.sort(function (a, b) { return a.priority - b.priority || a.order - b.order; });
+    while (active < 2) {
+      var position = queue.findIndex(function (job) { return job.priority === 0 || (warming && !document.hidden); });
+      if (position < 0) break;
+      var job = queue.splice(position, 1)[0];
+      active++; job.started = true;
+      (function (job) {
+        download(job.item).then(function (response) { job.done = true; job.resolve(response); }, function (error) {
+          jobs.delete(job.item.path); job.reject(error);
+        }).finally(function () {
+          active--; if (job.priority === 0) foreground--;
+          progress(); pump(); scheduleWarm();
+        });
+      })(job);
+    }
+  }
+  function resource(item, priority) {
+    valid(item);
+    var job = jobs.get(item.path);
+    if (job) {
+      stats.memoryHits++;
+      if (priority === 0 && job.priority !== 0 && !job.done) { job.priority = 0; foreground++; clearTimeout(idleTimer); pump(); }
+      return job.promise.then(function (r) { return r.clone(); });
+    }
+    job = {item: item, priority: priority || 0, order: sequence++, done: false, started: false};
+    job.promise = new Promise(function (resolve, reject) { job.resolve = resolve; job.reject = reject; });
+    jobs.set(item.path, job); queue.push(job);
+    if (job.priority === 0) { foreground++; clearTimeout(idleTimer); }
+    pump();
+    return job.promise.then(function (r) { return r.clone(); });
+  }
+  function json(item) {
+    if (!parsed.has(item.path)) parsed.set(item.path, resource(item, 0).then(function (r) { return r.json(); })
+      .catch(function (error) { parsed.delete(item.path); throw error; }));
+    else { var job = jobs.get(item.path); if (job && !job.done && job.priority !== 0) { job.priority = 0; foreground++; clearTimeout(idleTimer); pump(); } }
+    return parsed.get(item.path);
+  }
+  function needed(alias) {
+    var route = location.hash.replace(/^#/, '') || 'futures_rubber';
+    if (alias === 'data/dashboard-data.json') return true;
+    if (alias === 'data/futures-rubber-data.json') return route === 'futures_rubber';
+    if (alias === 'data/futures-rubber-position-rank-data.json') return route === 'futures_position_rank';
+    if (alias === 'data/tire-export-data.json') return route === 'tire_export';
+    if (alias === 'data/thailand-trade-data-v2.json') return ['thailand', 'international_demand_observation', 'latex_diversion_observation'].includes(route);
+    if (alias === 'data/vietnam-trade-data-v2.json') return ['vietnam', 'international_demand_observation', 'latex_diversion_observation'].includes(route);
+    return !['futures_rubber', 'futures_position_rank', 'tire_export', 'overview', 'weather_history', 'weather_driver_detection',
+      'china_butadiene', 'korea_butadiene', 'china_synthetic_rubber', 'korea_synthetic_rubber'].includes(route) && !/^(countries|products|custom_analysis)\//.test(route);
+  }
+  function allResources() {
+    var seen = new Map();
+    Object.values(CFG.assets).concat(manifest.resources).forEach(function (item) { seen.set(item.path, item); });
+    return Array.from(seen.values());
+  }
+  function preload() {
+    if (warmPromise) return warmPromise;
+    if (!manifest) return Promise.reject(Error('static manifest not loaded'));
+    warming = true; clearTimeout(idleTimer);
+    warmPromise = Promise.all(allResources().map(function (item) {
+      return resource(item, 10).catch(function (error) { stats.errors.push({path: item.path, error: error.message}); });
+    })).then(async function () {
+      stats.ready = stats.errors.length === 0; progress();
+      if (stats.ready && stats.persistent) {
+        try {
+          var names = (await caches.keys()).filter(function (name) { return name.startsWith(prefix) && name !== cacheName; });
+          for (var name of names.slice(0, -1)) await caches.delete(name);
+        } catch (_) { /* Cleanup cannot invalidate successfully fetched data. */ }
+      }
+      return stats;
+    });
+    pump(); progress(); return warmPromise;
+  }
+  function scheduleWarm() {
+    if (warming || !manifest || foreground) return;
+    clearTimeout(idleTimer); idleTimer = setTimeout(function () { if (!foreground) preload(); }, 1200);
+  }
+  window.addEventListener('hashchange', function () {
+    Object.entries(CFG.assets).forEach(function (pair) { if (needed(pair[0])) resource(pair[1], 0).catch(function () {}); });
+    pump(); scheduleWarm();
+  });
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) { pump(); progress(); } });
+  window.__STATIC_DELIVERY__ = {
+    stats: stats, json: json, preload: preload,
+    asset: function (alias) { return resource(CFG.assets[alias], needed(alias) ? 0 : 10); },
+    configure: function (value) { manifest = value; scheduleWarm(); },
+    descriptor: function (path) { var item = manifest.resources.find(function (item) { return item.path === path; }); if (!item) throw Error('static pack missing'); return item; }
+  };
+})();
+
 /* 静态托管 fetch 兜底层：把 /api/* 请求映射到预渲染的静态 JSON。
  * 由 build_static.py 内联注入 index.html <head>，在任何 module 脚本之前执行。
  * CFG 由构建脚本注入（sourceVersion / snapshotVersion）。 */
@@ -23,6 +196,8 @@
   if (window.__STATIC_SNAPSHOT_SHIM__) return;
   window.__STATIC_SNAPSHOT_SHIM__ = true;
   var realFetch = window.fetch.bind(window);
+  var delivery = window.__STATIC_DELIVERY__;
+  var bootstrapPromise = null;
   var SEP1 = '\u0001', SEP2 = '\u0002';
   var MAP = null, mapPromise = null;
   var metricsCache = null, metricsPromise = null;
@@ -40,13 +215,10 @@
   function loadMap() {
     if (MAP) return Promise.resolve(MAP);
     if (!mapPromise) {
-      mapPromise = realFetch(rel('api/map.json'), { cache: 'no-store' }).then(function (r) {
-        if (!r.ok) throw new Error('map ' + r.status);
-        return r.json();
-      }).then(function (m) {
+      mapPromise = delivery.json(CFG.map).then(function (m) {
         if (m.snapshotVersion !== CFG.snapshotVersion || m.contentVersion !== CFG.contentVersion)
           throw new Error('static version mismatch; reload required');
-        MAP = m; return m;
+        MAP = m; delivery.configure(m.delivery); return m;
       }).catch(function (error) { mapPromise = null; throw error; });
     }
     return mapPromise;
@@ -126,21 +298,25 @@
   function loadMetrics() {
     if (metricsCache) return Promise.resolve(metricsCache);
     if (!metricsPromise) {
-      metricsPromise = realFetch(rel('api/metrics.json'), { cache: 'no-store' }).then(function (r) {
-        if (!r.ok) throw new Error('metrics ' + r.status);
-        return r.json();
-      }).then(function (m) { metricsCache = m; return m; });
+      metricsPromise = loadBootstrap().then(function (m) { metricsCache = m.metrics; return m.metrics; })
+        .catch(function (error) { metricsPromise = null; throw error; });
     }
     return metricsPromise;
+  }
+
+  function loadBootstrap() {
+    if (!bootstrapPromise) bootstrapPromise = delivery.json(delivery.descriptor(MAP.delivery.bootstrap))
+      .catch(function (error) { bootstrapPromise = null; throw error; });
+    return bootstrapPromise;
   }
 
   function loadSeries(hash) {
     if (MAP && MAP.series && MAP.series.indexOf(hash) < 0)
       return Promise.reject(new Error('snapshot miss'));
     if (seriesCache[hash]) return seriesCache[hash];
-    seriesCache[hash] = realFetch(rel('api/series/' + hash + '.json'), { cache: 'no-store' }).then(function (r) {
-      if (!r.ok) throw new Error('series ' + r.status);
-      return r.json();
+    seriesCache[hash] = delivery.json(delivery.descriptor(MAP.delivery.seriesPacks[hash])).then(function (pack) {
+      if (!Object.prototype.hasOwnProperty.call(pack.series, hash)) throw Error('snapshot miss');
+      return pack.series[hash];
     });
     return seriesCache[hash].catch(function (error) { delete seriesCache[hash]; throw error; });
   }
@@ -180,7 +356,13 @@
     if (u.origin !== location.origin) return realFetch(input, init);
     var path;
     try { path = decodeURIComponent(u.pathname); } catch (e) { return realFetch(input, init); }
-    if (path.indexOf('/api/') !== 0) return realFetch(input, init);
+    if (path.indexOf('/api/') !== 0) {
+      var basePath = new URL('.', document.baseURI).pathname;
+      var alias = path.indexOf(basePath) === 0 ? path.slice(basePath.length) : '';
+      if (Object.prototype.hasOwnProperty.call(CFG.assets, alias) && ['GET', 'HEAD'].indexOf(method.toUpperCase()) >= 0)
+        return delivery.asset(alias);
+      return realFetch(input, init);
+    }
 
     if (method.toUpperCase() === 'POST' && path === '/api/custom-series/batch') {
       var body = init && init.body;
@@ -226,7 +408,10 @@
     return loadMap().then(function (m) {
       var name = m.gets && m.gets[key];
       if (!name) { noteMiss('get:' + key); return errRes(404, 'snapshot miss'); }
-      return realFetch(rel('api/gets/' + name + '.json'), { cache: 'no-store' });
+      return loadBootstrap().then(function (pack) {
+        if (!Object.prototype.hasOwnProperty.call(pack.gets, name)) return errRes(503, 'static GET missing');
+        return jsonRes(pack.gets[name]);
+      });
     }, function () { return errRes(503, 'static map unavailable'); });
   };
 })();
