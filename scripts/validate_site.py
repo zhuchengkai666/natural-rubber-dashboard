@@ -1,4 +1,10 @@
 """Small stdlib-only CI gate, copied to the separate public repository."""
+
+# Portable interpreter: explicitly locate sibling build tools.
+import sys as _portable_sys
+from pathlib import Path as _PortablePath
+_portable_sys.path.insert(0,str(_PortablePath(__file__).resolve().parent))
+
 import hashlib
 import json
 from pathlib import Path
