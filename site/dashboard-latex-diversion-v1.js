@@ -8,7 +8,7 @@ const diversionGroups = [
   { key: "thailand", heading: "泰国胶水分流", country: "泰国", direction: "出口",
     latex: "rubber_export_latex", smoked: "rubber_export_smoked_sheet" },
   { key: "vietnam", heading: "越南胶水分流", country: "越南", direction: "出口",
-    latex: "natural_export_400110", smoked: "natural_export_400121" },
+    threeL: "mixed_export_svr3l", latex: "natural_export_400110", smoked: "natural_export_400121" },
 ];
 const diversionComponents = ["latex", "smoked", "combined"];
 let diversionSources = null;
@@ -45,9 +45,19 @@ function diversionEscape(value) {
 }
 
 function diversionTitle(group, component) {
+  if (component === "threeL") return `${group.country}3L混合胶${group.direction}`;
   if (component === "latex") return `${group.country}乳胶${group.direction}（折干）`;
   if (component === "smoked") return `${group.country}烟片${group.direction}`;
+  if (group.key === "vietnam") return `${group.country}乳胶＋3L＋烟片${group.direction}`;
   return `${group.country}乳胶＋烟片${group.direction}（折干）`;
+}
+
+function diversionComponentsFor(group) {
+  return group.key === "vietnam" ? ["threeL", "latex", "smoked", "combined"] : diversionComponents;
+}
+
+function diversionAdditiveComponents(group) {
+  return group.key === "vietnam" ? ["latex", "threeL", "smoked"] : ["latex", "smoked"];
 }
 
 function diversionSource(group) {
@@ -75,12 +85,13 @@ function diversionPoints(group, component) {
 
 function diversionFallbackSeries(group, component) {
   if (component !== "combined") return diversionPoints(group, component);
-  const latex = new Map(diversionPoints(group, "latex").map((point) => [point.month, point.valueKt]));
-  const smoked = new Map(diversionPoints(group, "smoked").map((point) => [point.month, point.valueKt]));
-  return [...new Set([...latex.keys(), ...smoked.keys()])].sort().map((month) => {
-    const a = latex.get(month), b = smoked.get(month);
+  const components = diversionAdditiveComponents(group).map((key) =>
+    new Map(diversionPoints(group, key).map((point) => [point.month, point.valueKt]))
+  );
+  return [...new Set(components.flatMap((series) => [...series.keys()]))].sort().map((month) => {
+    const values = components.map((series) => series.get(month));
     return { month, year: Number(month.slice(0, 4)), monthNumber: Number(month.slice(5, 7)),
-      valueKt: Number.isFinite(a) && Number.isFinite(b) ? a + b : null };
+      valueKt: values.every(Number.isFinite) ? values.reduce((total, value) => total + value, 0) : null };
   });
 }
 
@@ -148,7 +159,7 @@ function diversionTableMarkup() {
     ? `三组数据更新月份不同；为便于对照，表格统一截至共同月份 ${cutoffMonth}。`
     : "";
   const rows = diversionGroups.map((group) => {
-    const entries = diversionComponents.map((component) => {
+    const entries = diversionComponentsFor(group).map((component) => {
       const metric = diversionTableMetric(group, component, cutoffMonth);
       return '<tr><td>' + diversionEscape(diversionTitle(group, component)) + "</td>" +
         diversionTableNumber(metric.current) + diversionTableNumber(metric.priorYear) +
@@ -181,18 +192,21 @@ function diversionCardMarkup(group, component, index) {
 }
 
 function diversionSectionMarkup(group, index) {
+  const firstChartIndex = diversionGroups.slice(0, index)
+    .reduce((total, item) => total + diversionComponentsFor(item).length, 0);
   return '<section class="thailand-chart-section latex-diversion-section" data-country-key="' + group.key +
     '"><header class="thailand-section-heading"><h2>' + diversionEscape(group.heading) +
     '</h2><span>更新至 ' + diversionEscape(diversionSource(group)?.latestMonth || "—") +
     ' / MONTHLY</span></header><div class="thailand-chart-grid latex-diversion-chart-grid">' +
-    diversionComponents.map((component, offset) => diversionCardMarkup(group, component, index * 3 + offset)).join("") +
+    diversionComponentsFor(group).map((component, offset) =>
+      diversionCardMarkup(group, component, firstChartIndex + offset)).join("") +
     '</div></section>';
 }
 
 function diversionRenderCard(card) {
   const group = diversionGroups.find((item) => item.key === card.dataset.countryKey);
   const component = card.dataset.component;
-  if (!group || !diversionComponents.includes(component)) return;
+  if (!group || !diversionComponentsFor(group).includes(component)) return;
   renderEditableMonthlyChart({
     card,
     chartId: `diversion:${group.key}:${component}`,
@@ -241,14 +255,15 @@ function diversionRender() {
     const source = diversionSource(group);
     return `${source.generatedAt}|${source.latestMonth}`;
   }).join(";");
-  if (host.dataset.readyKey === readyKey && host.querySelectorAll(".latex-diversion-chart").length === 9) return;
+  if (host.dataset.readyKey === readyKey && host.querySelectorAll(".latex-diversion-chart").length === 10) return;
   diversionUpdateIntro();
   host.innerHTML = '<div class="latex-diversion-layout"><div class="latex-diversion-tables" aria-label="胶水分流观察月度表格">' + diversionTableMarkup() + '</div>' +
     '<div class="latex-diversion-chart-sections" aria-label="胶水分流观察图表">' +
     diversionGroups.map(diversionSectionMarkup).join("") + '</div>' +
     '<p class="thailand-scope-note"><strong>口径：</strong>中国乳胶进口使用未折干实报量×0.60，' +
-    '泰国和越南乳胶出口沿用现有折干序列；烟片按实报重量计。各国“乳胶＋烟片”仅将同月两项有效值相加，' +
-    '任一项缺失则当月合计留空，不补零。三国分别采用中国进口、泰国出口、越南出口的全球月度口径，' +
+    '泰国和越南乳胶出口沿用现有折干序列；烟片和越南3L按各自公布重量计。中国、泰国“乳胶＋烟片”及越南“乳胶＋3L＋烟片”' +
+    '只对同月所有有效分项求和，任一项缺失则当月合计留空，不补零。越南3L为混合橡胶中的SVR3L分项，' +
+    '本页仅在该分项合计中计入，不再次并入越南橡胶总出口。三组分别采用中国进口、泰国出口、越南出口的全球月度口径，' +
     '不代表三国之间的双边流量；更新月份可能不同。</p></div>';
   host.dataset.readyKey = readyKey;
   const cards = [...host.querySelectorAll(".latex-diversion-chart")];
@@ -258,7 +273,7 @@ function diversionRender() {
     diversionResizeObserver = new ResizeObserver(() => cards.forEach(diversionRenderCard));
     cards.forEach((card) => diversionResizeObserver.observe(card));
   }
-  window.dispatchEvent(new CustomEvent("latex-diversion-dashboard-ready", { detail: { chartCount: 9 } }));
+  window.dispatchEvent(new CustomEvent("latex-diversion-dashboard-ready", { detail: { chartCount: 10 } }));
 }
 
 function diversionSchedule() {
@@ -276,8 +291,9 @@ function diversionLoad() {
   })).then(([china, thailand, vietnam]) => {
     diversionSources = { china, thailand, vietnam };
     for (const group of diversionGroups) {
-      if (!diversionPoints(group, "latex").length || !diversionPoints(group, "smoked").length) {
-        throw new Error(`${group.country}乳胶或烟片月度序列缺失`);
+      const required = group.key === "vietnam" ? ["threeL", "latex", "smoked"] : ["latex", "smoked"];
+      if (required.some((component) => !diversionPoints(group, component).length)) {
+        throw new Error(`${group.country}胶水分流所需月度序列缺失`);
       }
     }
   }).catch((error) => { diversionError = error; console.error("Latex diversion data load failed", error); })

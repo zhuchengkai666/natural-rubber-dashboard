@@ -1,37 +1,90 @@
 import { TREND_TEMPLATE, trendQueries, combineTrend } from './monthly-trend-template.js?v=20260920c';
-// One batched result client for both system defaults and user formulas.
-const requests = new Map();
-let flush;
+// A versioned global scheduler also survives accidental duplicate module URLs.
+// It shares requests, not completed values: source checks remain server-owned.
+const requestState = globalThis[Symbol.for('rubber.dashboard.chart-data.requests.20261106a')] ||= {
+  queued: new Map(), inFlight: new Map(), pages: new Map(), timer: null,
+};
+const BATCH_LIMIT = 240;
+const BATCH_WINDOW_MS = 16;
+function canonicalQuery(value) {
+  if (Array.isArray(value)) return value.map(canonicalQuery);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.keys(value).sort().filter(key=>value[key]!==undefined)
+      .map(key=>[key,canonicalQuery(value[key])]));
+  }
+  return value;
+}
+function scheduleRequests() {
+  if (requestState.timer !== null) return;
+  requestState.timer = setTimeout(()=>{
+    requestState.timer = null;
+    const items = [...requestState.queued.values()];
+    requestState.queued.clear();
+    items.forEach(item=>requestState.inFlight.set(item.key,item));
+    for (let offset=0; offset<items.length; offset+=BATCH_LIMIT) {
+      void sendBatch(items.slice(offset,offset+BATCH_LIMIT));
+    }
+  }, BATCH_WINDOW_MS);
+}
+function settleRequest(item, result, error) {
+  if (item.settled) return;
+  item.settled=true;
+  if (requestState.inFlight.get(item.key) === item) requestState.inFlight.delete(item.key);
+  item.listeners.forEach(listener=>error?listener.reject(error):listener.resolve(result));
+  // A force received during a normal read is never fulfilled by that old read.
+  // Multiple force clicks merge into exactly one subsequent forced request.
+  if (item.followUp) {
+    requestState.queued.set(item.key,item.followUp);
+    scheduleRequests();
+  }
+}
+async function sendBatch(batch) {
+  try {
+    const response=await fetch('/api/custom-series/batch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({charts:batch.map(i=>({...i.query,force:i.force}))})});
+    const data=await response.json();
+    if (!response.ok || !data.ok || data.results?.length!==batch.length) throw Error(data.error||'图表结果响应不完整');
+    data.results.forEach((entry,index)=>{
+      const item=batch[index];
+      if (!entry?.ok) {
+        settleRequest(item,null,Error(entry?.error||'图表结果读取失败'));
+        return;
+      }
+      const result=entry.result||{ok:true,points:[],expression:item.query.expression,cache:{state:entry.state,key:entry.key,error:entry.error}};
+      result._query=item.query;
+      settleRequest(item,result);
+    });
+  } catch(error) {
+    batch.forEach(item=>settleRequest(item,null,error));
+  }
+}
 export function requestChartSeries(chart, force = false) {
   if (chart.template === TREND_TEMPLATE) {
     const snapshot=JSON.parse(JSON.stringify(chart));
     return Promise.all(trendQueries(snapshot).map(q=>requestChartSeries(q,force))).then(results=>combineTrend(snapshot,results));
   }
-  const query = Object.fromEntries(['bindings','bindingFilters','expression','unit','startDate','endDate','template'].map(k=>[k,chart[k]]));
+  const query = canonicalQuery(Object.fromEntries(['bindings','bindingFilters','expression','unit','startDate','endDate','template'].map(k=>[k,chart[k]])));
   const key = JSON.stringify(query);
   return new Promise((resolve,reject)=>{
-    const item=requests.get(key)||{query,force,listeners:[]};
-    item.force ||= force; item.listeners.push({resolve,reject}); requests.set(key,item);
-    if (flush) return;
-    flush=setTimeout(async()=>{
-      flush=null; const batch=[...requests.values()]; requests.clear();
-      try {
-        const response=await fetch('/api/custom-series/batch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({charts:batch.map(i=>({...i.query,force:i.force}))})});
-        const data=await response.json();
-        if (!response.ok || !data.ok || data.results?.length!==batch.length) throw Error(data.error||'图表结果响应不完整');
-        data.results.forEach((entry,index)=>{
-          const item=batch[index];
-          if (!entry.ok) {item.listeners.forEach(l=>l.reject(Error(entry.error)));return;}
-          const result=entry.result||{ok:true,points:[],expression:item.query.expression,cache:{state:entry.state,key:entry.key,error:entry.error}};
-          result._query=item.query;
-          item.listeners.forEach(l=>l.resolve(result));
-        });
-      } catch(error) {batch.forEach(i=>i.listeners.forEach(l=>l.reject(error)));}
-    },0);
+    const queued=requestState.queued.get(key);
+    if (queued) {
+      queued.force ||= Boolean(force);
+      queued.listeners.push({resolve,reject});
+      return;
+    }
+    const running=requestState.inFlight.get(key);
+    if (running) {
+      if (force && !running.force) {
+        running.followUp ||= {key,query,force:true,listeners:[]};
+        running.followUp.listeners.push({resolve,reject});
+      } else running.listeners.push({resolve,reject});
+      return;
+    }
+    requestState.queued.set(key,{key,query,force:Boolean(force),listeners:[{resolve,reject}]});
+    scheduleRequests();
   });
 }
 
-const pages=new Map();
+const pages=requestState.pages;
 export function systemChartDefinitions(route) {
   if (!pages.has(route)) pages.set(route,fetch('/api/system-charts?route='+encodeURIComponent(route)).then(async r=>{
     const data=await r.json(); if(!r.ok||!data.ok) throw Error(data.error||'系统图表定义加载失败');

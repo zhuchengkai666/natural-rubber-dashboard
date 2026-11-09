@@ -7,7 +7,7 @@ import {
 const runtimeKey = Symbol.for('rubber.dashboard.chart-runtime.v2');
 const runtimeState = window[runtimeKey] ||= {registry:new WeakMap(),activeCards:new Map(),watchersInstalled:false};
 const editableChartRegistry = runtimeState.registry;
-import { requestChartSeries, systemChartDefinitions, chartTemplateOptions, chartTooltipModel } from './dashboard-chart-data-v1.js?v=20260916j';
+import { requestChartSeries, systemChartDefinitions, chartTemplateOptions, chartTooltipModel } from './dashboard-chart-data-v1.js?v=20261106a';
 const activeCards = runtimeState.activeCards;
 
 function cleanDefinition(card, definition = {}) {
@@ -116,7 +116,7 @@ function drawResult(card, entry) {
   if(!badge){badge=document.createElement('span');badge.dataset.systemSeriesStatus='true';badge.dataset.exportUi='true';card.querySelector('header')?.appendChild(badge);}
   const status=({pending:'计算中',updating:'更新中',failed:'更新失败'})[result.cache?.state]||'';
   if(badge.textContent!==status)badge.textContent=status;
-  badge.title=result.cache?.error||'';
+  badge.title=[result.cache?.error,result.cache?.state==='failed'&&result.endDate?'沿用上次结果，截至 '+result.endDate.slice(0,7):''].filter(Boolean).join('\n');
   const heading=card.querySelector('h2');
   if(heading){
     const model=chartTooltipModel(result,entry.definition.title,result.expression||entry.definition.chart.expression||'');
@@ -125,12 +125,16 @@ function drawResult(card, entry) {
     if(model.notes.length)lines.push('说明：'+model.notes.join('；'));
     heading.title=lines.join('\n');
   }
-  if(!result.points?.length&&['pending','updating'].includes(result.cache?.state)){
+  if(!result.points?.length&&['pending','updating','failed'].includes(result.cache?.state)){
     card.dataset.chartReady='false';
     entry.options.svg?.replaceChildren();
     entry.options.legend?.replaceChildren();
+    let notice=card.querySelector('[data-system-series-notice]');
+    if(!notice){notice=document.createElement('div');notice.dataset.systemSeriesNotice='true';card.querySelector('.chart-stage')?.appendChild(notice);}
+    notice.textContent=result.cache?.state==='failed'?(result.cache.error||'计算失败，请重新计算；详细原因见面板日志'):'首次计算中，完成后自动显示';
     return;
   }
+  card.querySelector('[data-system-series-notice]')?.remove();
   const options={...entry.options,...chartTemplateOptions(result,card.dataset.chartSize)};
   if(entry.frequency==='monthly')renderSeasonalChart(options);else renderDailySeasonalChart(options);
   card.dataset.chartReady='true';

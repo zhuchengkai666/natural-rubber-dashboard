@@ -3,7 +3,7 @@ import { installChartTemplateStyles, renderDailySeasonalChart, renderSeasonalCha
 
 installChartTemplateStyles();
 
-import { requestChartSeries, chartTemplateOptions, chartTooltipModel } from "./dashboard-chart-data-v1.js?v=20260920c";
+import { requestChartSeries, chartTemplateOptions, chartTooltipModel } from "./dashboard-chart-data-v1.js?v=20261106a";
 
 import { renderMonthlyTrend } from "./monthly-trend-template.js?v=20260920c";
 
@@ -680,13 +680,13 @@ function customRenderChart(card, payload) {
     card.querySelector('.country-chart-meta').appendChild(badge);
   }
   badge.textContent = ({pending:'计算中',updating:'更新中',failed:'更新失败'})[payload.cache?.state] || '';
-  badge.title = payload.cache?.error || '悬停标题查看数据版本';
-  if (!payload.points?.length && ['pending','updating'].includes(payload.cache?.state)) {
+  badge.title = [payload.cache?.error, payload.cache?.state==='failed'&&payload.endDate?'沿用上次结果，截至 '+payload.endDate.slice(0,7):'悬停标题查看数据版本'].filter(Boolean).join('\n');
+  if (!payload.points?.length && ['pending','updating','failed'].includes(payload.cache?.state)) {
     card.querySelector("svg")?.replaceChildren();
     card.querySelector(".country-chart-legend")?.replaceChildren();
     let loading = card.querySelector('.custom-chart-loading');
     if (!loading) { loading = document.createElement('div'); loading.className = 'custom-chart-loading'; card.querySelector('.chart-stage').appendChild(loading); }
-    loading.textContent = '首次计算中，完成后自动显示';
+    loading.textContent = payload.cache?.state==='failed'?(payload.cache.error||'计算失败，请重新计算；详细原因见面板日志'):'首次计算中，完成后自动显示';
     return;
   }
   card.querySelector(".custom-chart-loading")?.remove();
