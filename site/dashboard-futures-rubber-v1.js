@@ -5,6 +5,9 @@ let futuresData = null;
 let futuresDataPromise = null;
 let futuresRefreshPromise = null;
 const FUTURES_MIN_SPREAD_OPEN_INTEREST = 300;
+const COMBINED_POSITION_CODE = "RU+NR";
+const COMBINED_POSITION_LABEL = "RU+NR合计";
+const COMBINED_POSITION_COMPONENTS = ["RU", "NR"];
 
 const futuresStyle = document.createElement("style");
 futuresStyle.textContent = `
@@ -272,6 +275,22 @@ function productByCode(code) {
   return (futuresData?.products || []).find((item) => item.code === code) || futuresData?.products?.[0] || null;
 }
 
+function combinedPositionAvailable() {
+  return COMBINED_POSITION_COMPONENTS.every((code) => futuresData.products.some((product) => product.code === code));
+}
+
+function combinedPositionProduct() {
+  if (!combinedPositionAvailable()) return null;
+  // The unified chart reads A+B from the server. These points are for legacySystemCharts=1.
+  const [ru, nr] = COMBINED_POSITION_COMPONENTS.map((code) => productByCode(code).totalOpenInterest.series);
+  const nrByDate = new Map(nr.map((point) => [point.date, point.value]));
+  const series = ru.filter((point) => nrByDate.has(point.date)).map((point) => {
+    const nrValue = nrByDate.get(point.date);
+    return { ...point, value: Number.isFinite(point.value) && Number.isFinite(nrValue) ? point.value + nrValue : null };
+  });
+  return { code: COMBINED_POSITION_CODE, name: COMBINED_POSITION_LABEL, openInterestUnit: "手", totalOpenInterest: { series } };
+}
+
 function spreadByValue(value) {
   const [productCode, spreadCode] = String(value || "").split("|");
   const product = productByCode(productCode);
@@ -534,7 +553,9 @@ function positionSelection(product, selection) {
 }
 
 function renderPositionMain(host) {
-  const product = productByCode(host.querySelector("#futures-product-select")?.value);
+  const code = host.querySelector("#futures-product-select")?.value;
+  const isCombined = code === COMBINED_POSITION_CODE;
+  const product = isCombined ? combinedPositionProduct() : productByCode(code);
   const selection = host.querySelector("#futures-contract-select")?.value || "__TOTAL__";
   if (!product) return;
 
@@ -545,7 +566,7 @@ function renderPositionMain(host) {
   const isFamily = selected.kind === "contract-family";
   const title = isFamily
     ? selected.record.code
-    : product.code + " · 总持仓";
+    : (isCombined ? COMBINED_POSITION_LABEL : product.code) + " · 总持仓";
   const subtitle = isFamily
     ? product.name + " · DAILY CONTRACT SEASONAL / RECENT 6 CONTRACTS"
     : product.name + " · DAILY SEASONAL / RECENT 6 YEARS";
@@ -575,13 +596,13 @@ function renderPositionMain(host) {
     }
     : {
       fullYear: true,
-      sourceLabel: `${product.code} 总持仓`,
+      sourceLabel: `${isCombined ? COMBINED_POSITION_LABEL : product.code} 总持仓`,
       systemChartId: `futures:total:${product.code}`,
-      metrics: [{
-        alias: "A",
-        id: `futures_${String(product.code || "").toLowerCase()}_open_interest`,
-        label: `${product.code} 全部挂牌合约总持仓`,
-      }],
+      metrics: (isCombined ? COMBINED_POSITION_COMPONENTS : [product.code]).map((component, index) => ({
+        alias: index === 0 ? "A" : "B",
+        id: `futures_${component.toLowerCase()}_open_interest`,
+        label: `${component} 全部挂牌合约总持仓`,
+      })),
     };
   renderChart(card, selected.record.series, product.openInterestUnit || "手", "large", chartOptions);
 }
@@ -652,12 +673,16 @@ function fillPositionSelects(host) {
   if (productSelect.dataset.ready !== "true") {
     productSelect.innerHTML = (futuresData.products || []).map((product) =>
       '<option value="' + futuresEscape(product.code) + '">' + futuresEscape(product.code + " · " + product.name) + '</option>'
-    ).join("");
-    productSelect.value = productByCode("RU")?.code || futuresData.products[0]?.code || "";
+    ).join("") + (combinedPositionAvailable()
+      ? '<option value="' + COMBINED_POSITION_CODE + '">' + COMBINED_POSITION_LABEL + '</option>' : "");
+    const capture = new URLSearchParams(window.location.search);
+    const captureCombined = capture.get("native-export") === "1"
+      && capture.get("futures-position-combined") === "1" && combinedPositionAvailable();
+    productSelect.value = captureCombined ? COMBINED_POSITION_CODE : productByCode("RU")?.code || "";
     productSelect.dataset.ready = "true";
   }
 
-  const product = productByCode(productSelect.value);
+  const product = productSelect.value === COMBINED_POSITION_CODE ? null : productByCode(productSelect.value);
   const previous = contractSelect.value;
   const months = [...new Set((product?.contracts || []).map(contractMonthNumber).filter((month) => month !== null))].sort((left, right) => left - right);
   const monthOptions = months.map((month) => {
