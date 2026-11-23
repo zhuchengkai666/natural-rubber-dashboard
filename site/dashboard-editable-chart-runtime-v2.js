@@ -7,7 +7,7 @@ import {
 const runtimeKey = Symbol.for('rubber.dashboard.chart-runtime.v2');
 const runtimeState = window[runtimeKey] ||= {registry:new WeakMap(),activeCards:new Map(),watchersInstalled:false};
 const editableChartRegistry = runtimeState.registry;
-import { requestChartSeries, systemChartDefinitions, chartTemplateOptions, chartTooltipModel } from './dashboard-chart-data-v1.js?v=20261106a';
+import { requestChartSeries, systemChartDefinitions, chartTemplateOptions, chartTooltipModel } from './dashboard-chart-data-v1.js?v=20261120a';
 const activeCards = runtimeState.activeCards;
 
 function cleanDefinition(card, definition = {}) {
@@ -114,7 +114,7 @@ function drawResult(card, entry) {
   card.dataset.seriesState=result.cache?.state||'ready';
   let badge=card.querySelector('[data-system-series-status]');
   if(!badge){badge=document.createElement('span');badge.dataset.systemSeriesStatus='true';badge.dataset.exportUi='true';card.querySelector('header')?.appendChild(badge);}
-  const status=({pending:'计算中',updating:'更新中',failed:'更新失败'})[result.cache?.state]||'';
+  const status=({pending:'计算中',updating:'更新中',failed:'更新失败',blocked:'待重启'})[result.cache?.state]||'';
   if(badge.textContent!==status)badge.textContent=status;
   badge.title=[result.cache?.error,result.cache?.state==='failed'&&result.endDate?'沿用上次结果，截至 '+result.endDate.slice(0,7):''].filter(Boolean).join('\n');
   const heading=card.querySelector('h2');
@@ -125,17 +125,20 @@ function drawResult(card, entry) {
     if(model.notes.length)lines.push('说明：'+model.notes.join('；'));
     heading.title=lines.join('\n');
   }
-  if(!result.points?.length&&['pending','updating','failed'].includes(result.cache?.state)){
+  if(!result.points?.length&&['pending','updating','failed','blocked'].includes(result.cache?.state)){
     card.dataset.chartReady='false';
     entry.options.svg?.replaceChildren();
     entry.options.legend?.replaceChildren();
     let notice=card.querySelector('[data-system-series-notice]');
     if(!notice){notice=document.createElement('div');notice.dataset.systemSeriesNotice='true';card.querySelector('.chart-stage')?.appendChild(notice);}
-    notice.textContent=result.cache?.state==='failed'?(result.cache.error||'计算失败，请重新计算；详细原因见面板日志'):'首次计算中，完成后自动显示';
+    notice.textContent=['failed','blocked'].includes(result.cache?.state)?(result.cache.error||'计算失败，请重新计算；详细原因见面板日志'):'首次计算中，完成后自动显示';
     return;
   }
   card.querySelector('[data-system-series-notice]')?.remove();
   const options={...entry.options,...chartTemplateOptions(result,card.dataset.chartSize)};
+  const latest=(options.series||[]).filter(p=>Number.isFinite(p.value)).reduce((a,b)=>!a||b.date>a.date?b:a,null);
+  card.dataset.seriesLatestDate=latest?.date||'';
+  card.dataset.seriesLatestValue=latest?.value??'';
   if(entry.frequency==='monthly')renderSeasonalChart(options);else renderDailySeasonalChart(options);
   card.dataset.chartReady='true';
   card.dataset.systemResult='true';
@@ -152,7 +155,12 @@ async function refreshCard(card, entry, force=false) {
     } else entry.payload=result;
     const key=JSON.stringify(result.cache);
     if(key!==entry.rendered){entry.rendered=key;drawResult(card,entry);}
-  }catch(error){entry.payload={...(entry.payload||{}),cache:{...entry.payload?.cache,state:'failed',error:error.message}};drawResult(card,entry);}
+  }catch(error){
+    if(activeCards.get(card)!==entry||!card.isConnected)return;
+    entry.payload={...(entry.payload||{}),cache:{...entry.payload?.cache,state:'failed',error:error.message}};
+    entry.rendered=null;
+    drawResult(card,entry);
+  }
   finally{
     entry.busy=false;
     if(entry.forceAfterBusy&&activeCards.get(card)===entry&&card.isConnected){
@@ -222,3 +230,5 @@ function bindDefinition(card, definition) {
 
 window.dashboardEditableChartDefinitionV2 = getEditableChartDefinition;
 window.dashboardEditableChartSetSectionV2 = setEditableChartSection;
+// A data update is version-driven, not a force reset of every result.
+

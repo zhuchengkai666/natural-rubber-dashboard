@@ -3,9 +3,9 @@ import { installChartTemplateStyles, renderDailySeasonalChart, renderSeasonalCha
 
 installChartTemplateStyles();
 
-import { requestChartSeries, chartTemplateOptions, chartTooltipModel } from "./dashboard-chart-data-v1.js?v=20261106a";
+import { requestChartSeries, chartTemplateOptions, chartTooltipModel } from "./dashboard-chart-data-v1.js?v=20261120a";
 
-import { renderMonthlyTrend } from "./monthly-trend-template.js?v=20260920c";
+import { renderMonthlyTrend } from "./monthly-trend-template.js?v=20261120a";
 
 import { orderedGroups } from "./dashboard-section-order-v1.js?v=20260916a";
 
@@ -664,8 +664,8 @@ function customRenderChart(card, payload) {
   if (!card || !payload) return;
   const previous = customChartDetails.get(card);
   if (previous?.cache?.computedAt && previous.cache.computedAt===payload.cache?.computedAt && previous.cache.key===payload.cache?.key && previous.cache.state===payload.cache?.state && previous.cache.sourceVersion===payload.cache?.sourceVersion && previous.cache.error===payload.cache?.error && JSON.stringify(previous._query)===JSON.stringify(payload._query)) return;
-  if (!payload.points?.length && ['pending','updating','failed'].includes(payload.cache?.state) && previous?.points?.length && previous.cache?.key === payload.cache?.key) {
-    payload = {...previous,_query:payload._query,cache:{...previous.cache,...payload.cache,sourceVersion:previous.cache?.sourceVersion,computedAt:previous.cache?.computedAt,state:payload.cache.state==='failed'?'failed':'updating'}};
+  if (!payload.points?.length && ['pending','updating','failed','blocked'].includes(payload.cache?.state) && previous?.points?.length && previous.cache?.key === payload.cache?.key) {
+    payload = {...previous,_query:payload._query,cache:{...previous.cache,...payload.cache,sourceVersion:previous.cache?.sourceVersion,computedAt:previous.cache?.computedAt,state:payload.cache.state==='pending'?'updating':payload.cache.state}};
   }
   customChartDetails.set(card, payload);
   
@@ -679,14 +679,14 @@ function customRenderChart(card, payload) {
     badge.dataset.exportUi = 'true';
     card.querySelector('.country-chart-meta').appendChild(badge);
   }
-  badge.textContent = ({pending:'计算中',updating:'更新中',failed:'更新失败'})[payload.cache?.state] || '';
+  badge.textContent = ({pending:'计算中',updating:'更新中',failed:'更新失败',blocked:'待重启'})[payload.cache?.state] || '';
   badge.title = [payload.cache?.error, payload.cache?.state==='failed'&&payload.endDate?'沿用上次结果，截至 '+payload.endDate.slice(0,7):'悬停标题查看数据版本'].filter(Boolean).join('\n');
-  if (!payload.points?.length && ['pending','updating','failed'].includes(payload.cache?.state)) {
+  if (!payload.points?.length && ['pending','updating','failed','blocked'].includes(payload.cache?.state)) {
     card.querySelector("svg")?.replaceChildren();
     card.querySelector(".country-chart-legend")?.replaceChildren();
     let loading = card.querySelector('.custom-chart-loading');
     if (!loading) { loading = document.createElement('div'); loading.className = 'custom-chart-loading'; card.querySelector('.chart-stage').appendChild(loading); }
-    loading.textContent = payload.cache?.state==='failed'?(payload.cache.error||'计算失败，请重新计算；详细原因见面板日志'):'首次计算中，完成后自动显示';
+    loading.textContent = ['failed','blocked'].includes(payload.cache?.state)?(payload.cache.error||'计算失败，请重新计算；详细原因见面板日志'):'首次计算中，完成后自动显示';
     return;
   }
   card.querySelector(".custom-chart-loading")?.remove();
@@ -699,6 +699,9 @@ function customRenderChart(card, payload) {
   if (customDetailAnchor?.closest('.custom-chart-card') === card) customShowChartDetails(customDetailAnchor);
   card.querySelector(".custom-chart-empty")?.remove();
   const hasValues = (payload.points || []).some(point => point.value !== null && Number.isFinite(point.value));
+  const latest = (payload.points || []).filter(point => Number.isFinite(point.value)).reduce((a,b)=>!a||b.date>a.date?b:a,null);
+  card.dataset.seriesLatestDate = latest?.date || '';
+  card.dataset.seriesLatestValue = latest?.value ?? '';
   card.querySelector("svg").style.display = hasValues ? "" : "none";
   if (!hasValues) {
     card.querySelector(".country-chart-legend").replaceChildren();
@@ -857,9 +860,11 @@ Promise.all([customReloadPages({ refreshShell: false }), customReloadExtensions(
     await customHydrateSavedBindings();
     if (typeof window.rubberDashboardRender === "function") window.rubberDashboardRender();
     customScheduleRender();
+    return true;
   })
   .catch((error) => {
     console.error(error);
     const host = document.querySelector(".custom-analysis-page-host");
     if (host) host.innerHTML = '<div class="data-error"><h2>自定义分析加载失败</h2><p>' + customEscape(error.message) + '</p></div>';
+    return false;
   });

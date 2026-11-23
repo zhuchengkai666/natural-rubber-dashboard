@@ -389,6 +389,12 @@ function rankPositionTooltip(tooltip, stage, event, fallbackWidth = 190, fallbac
 }
 
 function rankRenderSvg(stage, points) {
+  const latest = points.findLast(p => [p.long,p.short,p.net].some(Number.isFinite));
+  const card = stage.closest('.futures-position-rank-chart-card');
+  if (card) {
+    card.dataset.seriesLatestDate = latest?.date || '';
+    card.dataset.seriesLatestValue = [latest?.net,latest?.long,latest?.short].find(Number.isFinite) ?? '';
+  }
   const width = 980; const height = 350; const left = 58; const right = 20; const top = 20; const bottom = 42;
   const values = points.flatMap((point) => [point.long, point.short, point.net]).filter((value) => value !== null && Number.isFinite(Number(value))).map(Number);
   const innerWidth = width - left - right; const innerHeight = height - top - bottom;

@@ -1,4 +1,4 @@
-import { TREND_TEMPLATE, trendQueries, combineTrend } from './monthly-trend-template.js?v=20260920c';
+import { TREND_TEMPLATE, trendQueries, combineTrend } from './monthly-trend-template.js?v=20261120a';
 // A versioned global scheduler also survives accidental duplicate module URLs.
 // It shares requests, not completed values: source checks remain server-owned.
 const requestState = globalThis[Symbol.for('rubber.dashboard.chart-data.requests.20261106a')] ||= {
@@ -115,6 +115,7 @@ export function chartStatusLabel(state) {
     ready: '已完成',
     pending: '首次计算中',
     updating: '更新中（沿用上次结果）',
+    blocked: '等待重启（保留上次结果）',
     failed: '更新失败（沿用上次结果）',
   })[state] || '待计算';
 }

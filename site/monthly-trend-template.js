@@ -51,7 +51,7 @@ export function combineTrend(chart, results) {
   const points=[...byDate.values()].sort((a,b)=>a.date.localeCompare(b.date));
   for(const a of chart.annotations||[])if(a.type==='horizontal'&&!lines.some(l=>l.axis===(a.axis||'left')))throw Error('水平虚线所属坐标轴没有指标');
   const states=results.map(r=>r.cache?.state||'ready');
-  const state=['failed','pending','updating'].find(s=>states.includes(s))||'ready';
+  const state=['blocked','failed','pending','updating'].find(s=>states.includes(s))||'ready';
   return {ok:true,frequency:'monthly',template:TREND_TEMPLATE,lines,points,bindings,unit:Object.entries(axes).map(([a,u])=>(a==='right'?'右轴 ':'左轴 ')+u).join(' / '),
     startDate:points[0]?.date,endDate:points.at(-1)?.date,expression:'各指标独立绘制（不相加）',
     annotations:chart.annotations||[],_query:JSON.parse(JSON.stringify(chart)),

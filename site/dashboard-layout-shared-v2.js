@@ -1,5 +1,5 @@
 import { shouldShowChartSeries, shouldShowTableSeries } from "./三分之一尺寸折线图-同比模板/chart-core.js?v=20260902b";
-import { renderEditableMonthlyChart } from "./dashboard-editable-chart-runtime-v2.js?v=20261026a";
+import { renderEditableMonthlyChart } from "./dashboard-editable-chart-runtime-v2.js?v=20261120a";
 import { wanTFromKt, wanTSeriesFromKt } from "./dashboard-mass-unit-v1.js";
 const layoutApp = document.querySelector("#app");
 let layoutData = null;
