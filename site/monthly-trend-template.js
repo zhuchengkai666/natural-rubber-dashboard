@@ -68,13 +68,13 @@ export function trendDomain(values) {
   return [Math.floor((low-pad)/step)*step,Math.ceil((high+pad)/step)*step];
 }
 
-export function renderMonthlyTrend({svg,stage,tooltip,legend,payload}) {
-  const W=1100,H=400,L=70,R=1030,T=27,B=343;
+export function renderMonthlyTrend({svg,stage,tooltip,legend,payload,compact=false}) {
+  const [W,H,L,R,T,B]=compact?[580,342,46,528,24,290]:[1100,400,70,1030,27,343];
   svg.replaceChildren();legend.replaceChildren();
   svg.setAttribute('viewBox',`0 0 ${W} ${H}`);svg.setAttribute('role','img');
   svg.setAttribute('aria-label','连续月份折线图，支持左右坐标轴');
   // Use the same typography as SVG axis labels, without inherited 16px body text.
-  legend.style.font='12px Arial, "Microsoft YaHei", sans-serif';
+  legend.style.font=(compact?'10px':'12px')+' Arial, "Microsoft YaHei", sans-serif';
   legend.style.color='#637080';
   const add=(tag,attrs={},text='',parent=svg)=>{const n=document.createElementNS('http://www.w3.org/2000/svg',tag);Object.entries(attrs).forEach(([k,v])=>n.setAttribute(k,v));if(text)n.textContent=text;parent.appendChild(n);return n;};
   const label=(x,y,text,anchor='middle',fill='#637080')=>add('text',{x,y,'text-anchor':anchor,fill,'font-size':12,'font-family':'Arial, Microsoft YaHei, sans-serif'},text);
@@ -107,7 +107,7 @@ export function renderMonthlyTrend({svg,stage,tooltip,legend,payload}) {
     }
   }
   for(const axis of Object.keys(domains))label(axis==='left'?L:R,14,(axis==='left'?'左轴 ':'右轴 ')+(lines.find(l=>l.axis===axis)?.unit||''),axis==='left'?'start':'end');
-  const tickStep=Math.max(1,Math.ceil((span+1)/24));
+  const tickStep=Math.max(1,Math.ceil((span+1)/(compact?12:24)));
   for(let m=start;m<=end;m++){
     if((m-start)%tickStep===0)label(x(m),B+21,String(m%12+1));
     if(m%12===0 || m===start){add('line',{x1:x(m),x2:x(m),y1:T,y2:B,stroke:'#d4dce3','stroke-dasharray':'3 4'});label(x(m)+4,B+43,String(Math.floor(m/12)),'start');}

@@ -3,9 +3,9 @@ import { installChartTemplateStyles, renderDailySeasonalChart, renderSeasonalCha
 
 installChartTemplateStyles();
 
-import { requestChartSeries, chartTemplateOptions, chartTooltipModel } from "./dashboard-chart-data-v1.js?v=20261120a";
+import { requestChartSeries, chartTemplateOptions, chartTooltipModel } from "./dashboard-chart-data-v1.js?v=20261123d";
 
-import { renderMonthlyTrend } from "./monthly-trend-template.js?v=20261120a";
+import { renderMonthlyTrend } from "./monthly-trend-template.js?v=20261123d";
 
 import { orderedGroups } from "./dashboard-section-order-v1.js?v=20260916a";
 

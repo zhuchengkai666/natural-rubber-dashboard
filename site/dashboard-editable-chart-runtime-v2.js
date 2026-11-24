@@ -7,7 +7,8 @@ import {
 const runtimeKey = Symbol.for('rubber.dashboard.chart-runtime.v2');
 const runtimeState = window[runtimeKey] ||= {registry:new WeakMap(),activeCards:new Map(),watchersInstalled:false};
 const editableChartRegistry = runtimeState.registry;
-import { requestChartSeries, systemChartDefinitions, chartTemplateOptions, chartTooltipModel } from './dashboard-chart-data-v1.js?v=20261120a';
+import { requestChartSeries, systemChartDefinitions, chartTemplateOptions, chartTooltipModel } from './dashboard-chart-data-v1.js?v=20261123d';
+import { renderMonthlyTrend, TREND_TEMPLATE } from './monthly-trend-template.js?v=20261123d';
 const activeCards = runtimeState.activeCards;
 
 function cleanDefinition(card, definition = {}) {
@@ -139,7 +140,9 @@ function drawResult(card, entry) {
   const latest=(options.series||[]).filter(p=>Number.isFinite(p.value)).reduce((a,b)=>!a||b.date>a.date?b:a,null);
   card.dataset.seriesLatestDate=latest?.date||'';
   card.dataset.seriesLatestValue=latest?.value??'';
-  if(entry.frequency==='monthly')renderSeasonalChart(options);else renderDailySeasonalChart(options);
+  if (result.template === TREND_TEMPLATE) renderMonthlyTrend({...options,payload:result,compact:card.dataset.chartSize==='third'});
+  else if (entry.frequency === 'monthly') renderSeasonalChart(options);
+  else renderDailySeasonalChart(options);
   card.dataset.chartReady='true';
   card.dataset.systemResult='true';
 }
@@ -195,7 +198,7 @@ function loadSystemDefinition(card,entry) {
 function renderSystemChart(card, id, options, frequency) {
   const route=location.hash.replace(/^#/,'').split('/').filter(Boolean).slice(0,2).join('/')||'overview';
   // Explicit read-only fallback. Never change the user's formula or saved overlay.
-  if(new URLSearchParams(location.search).get('legacySystemCharts')==='1') {
+  if(!options.systemOnly && new URLSearchParams(location.search).get('legacySystemCharts')==='1') {
     card.dataset.chartReady='true';
     return frequency==='monthly'?renderSeasonalChart(options):renderDailySeasonalChart(options);
   }
@@ -223,6 +226,7 @@ function bindDefinition(card, definition) {
   if(JSON.stringify(current?.chart)===JSON.stringify(definition.chart) && JSON.stringify(current?.metrics)===JSON.stringify(metrics))return;
   registerEditableChart(card,{...current,chart:definition.chart,
     metrics,
+    chartType:definition.chart.template===TREND_TEMPLATE ? TREND_TEMPLATE : current?.chartType,
     parameters:{...current?.parameters,template:definition.chart.template}});
 }
 

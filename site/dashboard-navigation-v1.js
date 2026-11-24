@@ -4,11 +4,13 @@ const builtin = [
   ['weather_tracking','天气跟踪','',''],
   ['weather_history','历史天气情况','weather_tracking','weather_history'],
   ['weather_driver_detection','天气驱动因子检测','weather_tracking','weather_driver_detection'],
+  ['demand_tracking','需求跟踪','',''],
+  ['demand_indicator_summary','需求指标汇总','demand_tracking','demand_indicator_summary'],
+  ['tire_export','中国轮胎出口','demand_tracking','tire_export'],
   ['rubber_export','中国橡胶进口','',''],
   ['overview','中国总览','rubber_export','overview'],
   ['countries','分国别','rubber_export','countries'],
   ['products','分胶种','rubber_export','products'],
-  ['tire_export','中国轮胎出口','','tire_export'],
   ['producer_export','其他国家进出口','',''],
   ...[['international_demand_observation','国际需求观察'],['latex_diversion_observation','胶水分流观察'],['thailand','泰国'],['vietnam','越南'],
       ['indonesia','印尼'],['malaysia','马来西亚'],['cote_divoire','科特迪瓦'],['united_states','美国'],
@@ -34,6 +36,7 @@ function nodes() {
   const pages = (window.customDashboardPages || []).filter(p=>!p.isDeleted);
   const pageIds = new Set(pages.map(p=>'page-'+p.id));
   const result = navigation.nodes.filter(n=>!n.id.startsWith('page-') || pageIds.has(n.id)).map(n=>({...n}));
+  const addDemandGroup = !result.some(n=>n.id==='demand_tracking');
   for (const n of result) if (n.id==='synthetic_trade' && n.label==='合成胶/丁二烯进出口') n.label='合成/丁二烯进出口';
   for (const n of builtin) if (!result.some(x=>x.id===n.id)) {
     if (n.id === 'synthetic_trade') {
@@ -55,11 +58,26 @@ function nodes() {
       result.splice(weatherChildren.length ? weatherChildren.at(-1) + 1 : weatherRoot + 1, 0, {...n});
       continue;
     }
+    if (n.id === 'demand_tracking' || n.parentId === 'demand_tracking') {
+      const afterId = n.id === 'demand_tracking' ? 'weather_tracking' : 'demand_tracking';
+      const last = result.findLastIndex(x=>x.id===afterId || x.parentId===afterId);
+      if (last >= 0) { result.splice(last+1,0,{...n}); continue; }
+    }
     if (n.id === 'latex_diversion_observation') {
       const demandIndex = result.findIndex(x=>x.id==='international_demand_observation');
       if (demandIndex >= 0) { result.splice(demandIndex + 1, 0, {...n}); continue; }
     }
     result.push({...n});
+  }
+  // Older saved navigation already contains tire_export as its own root.
+  // Migrate when introducing the group; thereafter preserve explicit edits.
+  if (addDemandGroup) {
+    const tireIndex = result.findIndex(n=>n.id==='tire_export' && !n.parentId && n.route==='tire_export');
+    if (tireIndex >= 0) {
+      const [tire] = result.splice(tireIndex,1);
+      const summaryIndex = result.findIndex(n=>n.id==='demand_indicator_summary');
+      result.splice(summaryIndex+1,0,{...tire,parentId:'demand_tracking'});
+    }
   }
   for (const p of pages) {
     const id = 'page-'+p.id;

@@ -1,5 +1,5 @@
 import {installChartTemplateStyles} from './三分之一尺寸折线图-同比模板/chart-core.js?v=20261019a';
-import {renderEditableMonthlyChart} from './dashboard-editable-chart-runtime-v2.js?v=20261120a';
+import {renderEditableMonthlyChart} from './dashboard-editable-chart-runtime-v2.js?v=20261123d';
 import {cnkrStats,cnkrHeaders} from './dashboard-synthetic-trade-model-v1.js?v=20261026a';
 
 const app=document.querySelector('#app');

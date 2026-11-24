@@ -22,6 +22,7 @@ const routeMeta = {
   futures_position_rank: { title: "持仓龙虎榜", kicker: "02 / POSITION RANK", description: "仅展示 RU、NR、BR 各合约前 20 名会员的多空持仓及日增减，缺失数据不补零。" },
   weather_history: { title: "历史天气情况", kicker: "03 / WEATHER TRACKING", description: "" },
   weather_driver_detection: { title: "天气驱动因子检测", kicker: "03 / WEATHER TRACKING", description: "基于最新已同步天气驱动图表的观测与预测解读。" },
+  demand_indicator_summary: { title: "需求指标汇总", kicker: "DEMAND TRACKING", description: "跟踪国内轮胎开工、成品库存和产量，以及汽车销量与出口的变化。" },
   overview: { title: "中国橡胶进口总览", kicker: "01 / OVERVIEW", description: "用一个总量变量观察中国橡胶进口的季节性、节奏与同比变化。" },
   countries: { title: "进口自各国", kicker: "02 / ORIGIN", description: "展示最近 60 个月月均进口量达到 0.1 万吨的国家、地区及组合口径。" },
   products: { title: "各胶种", kicker: "03 / PRODUCTS", description: "展示最近 60 个月月均进口量达到 0.1 万吨的胶种序列。" },
@@ -185,6 +186,7 @@ function shellMarkup(route) {
   const isCustom = route.primary === "custom_analysis";
   const isWeatherHistory = route.primary === "weather_history";
   const isWeatherDriver = route.primary === "weather_driver_detection";
+  const isDemand = route.primary === "demand_indicator_summary";
   const pageTitle = route.selected ? route.selected.label : meta.title;
   const pageDescription = route.primary === "custom_analysis" && route.selected
     ? "按已保存的 DuckDB 指标和公式实时生成折线图。"
@@ -197,9 +199,9 @@ function shellMarkup(route) {
   const introNote = isWeatherHistory ? "LOCAL / LATEST FILE" : isWeatherDriver ? "基于已同步图表" : isCustom ? "DUCKDB / FORMULA / LINE" : isPositionRank ? "DAILY / LONG / SHORT / NET" : "MONTHLY / YTD / YOY";
   const introStamp = isWeatherDriver
     ? '<div class="intro-stamp weather-driver-actions"><small data-weather-last-updated>最后成功更新：读取中</small><small data-weather-refresh-status role="status" aria-live="polite"></small></div>'
-    : '<div class="intro-stamp"><span>UNIT</span><strong>' + introUnit + '</strong><small>' + introNote + '</small></div>';
-  const headerMarkup = isWeatherHistory ? '' : '<header class="topbar"><div class="breadcrumb"><span>' + (isWeatherDriver ? 'WEATHER' : isPositionRank ? 'FUTURES' : 'CN CUSTOMS') + '</span><i>/</i><span>' + meta.kicker + '</span></div>' +
-    '<div class="topbar-meta"><span class="update-dot"></span><span>' + (isWeatherDriver ? '最后更新' : isCustom ? '数据方式' : isPositionRank ? '最新交易日' : '最新月份') + '</span><strong' + (isWeatherDriver ? ' data-weather-header-updated' : '') + '>' + latestHeader + '</strong></div></header>';
+    : isDemand ? '' : '<div class="intro-stamp"><span>UNIT</span><strong>' + introUnit + '</strong><small>' + introNote + '</small></div>';
+  const headerMarkup = isWeatherHistory ? '' : '<header class="topbar"><div class="breadcrumb"><span>' + (isWeatherDriver ? 'WEATHER' : isDemand ? 'CHINA DEMAND' : isPositionRank ? 'FUTURES' : 'CN CUSTOMS') + '</span><i>/</i><span>' + meta.kicker + '</span></div>' +
+    (isDemand ? '' : '<div class="topbar-meta"><span class="update-dot"></span><span>' + (isWeatherDriver ? '最后更新' : isCustom ? '数据方式' : isPositionRank ? '最新交易日' : '最新月份') + '</span><strong' + (isWeatherDriver ? ' data-weather-header-updated' : '') + '>' + latestHeader + '</strong></div>') + '</header>';
   const introMarkup = isWeatherHistory ? '' : '<section class="page-intro"><div><p class="eyebrow">' + dashboardEscapeHtml(pageKicker) + '</p><h1>' + dashboardEscapeHtml(pageTitle) + '</h1><p class="page-description">' + dashboardEscapeHtml(pageDescription) + '</p></div>' + introStamp + '</section>';
   return '<div class="app-shell">' +
     '<aside class="sidebar"><a class="brand" href="#futures_rubber"><span class="brand-mark">R</span><span><strong>RUBBER</strong><small>RUBBER DATA DASHBOARD</small></span></a>' +
@@ -214,6 +216,7 @@ function renderPage(route) {
   if (route.primary === "futures_position_rank") return futuresPositionRankPage();
   if (route.primary === "weather_history") return '<section class="weather-history-page-host" aria-label="历史天气情况"><img data-weather-original data-clipboard-src="/api/weather/latest-image?format=png" src="./weather-history.jpg?v=' + Date.now() + '" alt="最新CPC橡胶天气日报" loading="eager"></section>';
   if (route.primary === "weather_driver_detection") return '<section class="weather-driver-page-host" aria-label="天气驱动因子检测"><div class="data-loading">正在载入天气资料…</div></section>';
+  if (route.primary === "demand_indicator_summary") return '<section class="demand-indicator-page-host" aria-label="需求指标汇总"><div class="data-loading">正在读取需求指标…</div></section>';
   if (route.primary === "countries") return countriesPage(route);
   if (route.primary === "products") return productsPage(route);
   if (route.primary === "tire_export") return tireExportPage();
@@ -302,7 +305,7 @@ function render() {
   const route = getRoute();
   app.innerHTML = shellMarkup(route);
   bindNavigation();
-  document.title = routeMeta[route.primary]?.synthetic
+  document.title = routeMeta[route.primary]?.synthetic || route.primary === "demand_indicator_summary"
       ? routeMeta[route.primary].title + '｜RUBBER DASHBOARD'
       : route.primary === "futures_rubber"
       ? "月差/持仓｜RUBBER DASHBOARD"

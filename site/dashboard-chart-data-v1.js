@@ -1,4 +1,4 @@
-import { TREND_TEMPLATE, trendQueries, combineTrend } from './monthly-trend-template.js?v=20261120a';
+import { TREND_TEMPLATE, trendQueries, combineTrend } from './monthly-trend-template.js?v=20261123d';
 // A versioned global scheduler also survives accidental duplicate module URLs.
 // It shares requests, not completed values: source checks remain server-owned.
 const requestState = globalThis[Symbol.for('rubber.dashboard.chart-data.requests.20261106a')] ||= {
