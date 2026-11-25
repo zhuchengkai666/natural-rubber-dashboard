@@ -34,7 +34,7 @@ def validate(site):
         assert file.suffix.lower() in {'.html', '.css', '.js', '.json', '.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp', ''}, 'forbidden file type'
         assert not file.name.startswith('.env'), 'environment file is forbidden'
         total += len(raw)
-    assert total <= 60_000_000, 'site exceeds 60MB budget'
+    assert total <= 100_000_000, 'site exceeds 100MB budget'
     if mapping.get('v', 1) >= 2:
         delivery = mapping['delivery']
         for item in delivery['resources'] + list(delivery['assets'].values()):

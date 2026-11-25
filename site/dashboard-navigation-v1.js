@@ -1,3 +1,7 @@
+const syntheticTradePages = [
+  ['china_butadiene','中国丁二烯'], ['korea_butadiene','韩国丁二烯'],
+  ['china_synthetic_rubber','中国合成橡胶'], ['korea_synthetic_rubber','韩国合成橡胶'],
+];
 const builtin = [
   ['futures_rubber','月差/持仓','','futures_rubber'],
   ['futures_position_rank','持仓龙虎榜','','futures_position_rank'],
@@ -16,11 +20,9 @@ const builtin = [
       ['indonesia','印尼'],['malaysia','马来西亚'],['cote_divoire','科特迪瓦'],['united_states','美国'],
       ['european_union','欧盟'],['india','印度'],['japan','日本'],['south_korea','韩国']]
       .map(([id,label])=>[id,label,'producer_export',id]),
-  ['synthetic_trade','合成/丁二烯进出口','',''],
-  ['china_butadiene','中国丁二烯','synthetic_trade','china_butadiene'],
-  ['korea_butadiene','韩国丁二烯','synthetic_trade','korea_butadiene'],
-  ['china_synthetic_rubber','中国合成橡胶','synthetic_trade','china_synthetic_rubber'],
-  ['korea_synthetic_rubber','韩国合成橡胶','synthetic_trade','korea_synthetic_rubber'],
+  ['synthetic_tracking','合成胶/丁二烯跟踪','',''],
+  ['synthetic_indicator_summary','合成指标汇总','synthetic_tracking','synthetic_indicator_summary'],
+  ['synthetic_trade','合成/丁二烯进出口','synthetic_tracking',syntheticTradePages[0][0]],
   ['custom_analysis','自定义分析','','custom_analysis'],
 ].map(([id,label,parentId,route])=>({id,label,parentId,route}));
 let navigation = {nodes:[],revision:''};
@@ -35,18 +37,22 @@ async function api() {
 function nodes() {
   const pages = (window.customDashboardPages || []).filter(p=>!p.isDeleted);
   const pageIds = new Set(pages.map(p=>'page-'+p.id));
-  const result = navigation.nodes.filter(n=>!n.id.startsWith('page-') || pageIds.has(n.id)).map(n=>({...n}));
+  const legacyTrade = !navigation.nodes.some(n=>n.id==='synthetic_tracking');
+  const result = navigation.nodes.filter(n=>(!n.id.startsWith('page-') || pageIds.has(n.id)) &&
+    (!legacyTrade || !syntheticTradePages.some(([route])=>n.id===route && n.route===route))).map(n=>({...n}));
   const addDemandGroup = !result.some(n=>n.id==='demand_tracking');
-  for (const n of result) if (n.id==='synthetic_trade' && n.label==='合成胶/丁二烯进出口') n.label='合成/丁二烯进出口';
-  for (const n of builtin) if (!result.some(x=>x.id===n.id)) {
-    if (n.id === 'synthetic_trade') {
-      const producerIndex = result.findIndex(x=>x.id==='producer_export');
-      if (producerIndex >= 0) { result.splice(producerIndex + 1, 0, {...n}); continue; }
+  if (legacyTrade) {
+    for (const n of result) {
+      if (n.id==='synthetic_trade') Object.assign(n,builtin.find(item=>item.id===n.id));
+      else if (n.parentId==='synthetic_trade') n.parentId='synthetic_tracking';
     }
-    if (n.parentId === 'synthetic_trade') {
-      const siblings = result.map((x,i)=>x.parentId==='synthetic_trade'?i:-1).filter(i=>i>=0);
-      result.splice(siblings.length ? siblings.at(-1)+1 : result.findIndex(x=>x.id==='synthetic_trade')+1,0,{...n});
-      continue;
+  }
+  for (const n of builtin) if (!result.some(x=>x.id===n.id)) {
+    if (n.id === 'synthetic_tracking' || n.parentId === 'synthetic_tracking') {
+      const afterId = n.id==='synthetic_tracking' ? 'producer_export' : 'synthetic_tracking';
+      const afterChildren = n.parentId==='synthetic_tracking' && !(legacyTrade && n.id==='synthetic_indicator_summary');
+      const last = result.findLastIndex(x=>x.id===afterId || (afterChildren && x.parentId===afterId));
+      if (last >= 0) { result.splice(last+1,0,{...n}); continue; }
     }
     if (n.id === 'weather_tracking') {
       const rankIndex = result.findIndex(x=>x.id==='futures_position_rank');
@@ -81,19 +87,22 @@ function nodes() {
   }
   for (const p of pages) {
     const id = 'page-'+p.id;
-    if (!result.some(n=>n.id===id)) result.push({id,label:p.title,parentId:p.navigationParent || 'custom_analysis',route:'custom_analysis/'+p.id});
+    const parentId = p.navigationParent==='synthetic_trade' ? 'synthetic_tracking' : p.navigationParent;
+    if (!result.some(n=>n.id===id)) result.push({id,label:p.title,parentId:parentId || 'custom_analysis',route:'custom_analysis/'+p.id});
   }
   const roots = new Set(result.filter(n=>!n.parentId).map(n=>n.id));
   for (const n of result) if (n.parentId && !roots.has(n.parentId)) n.parentId='custom_analysis';
   const excluded = new Set(['custom_analysis']); let changed = true; while(changed) { changed = false; for(const n of result) if(excluded.has(n.parentId) && !excluded.has(n.id)) { excluded.add(n.id); changed = true; } } return result.filter(n => !excluded.has(n.id));
 }
 window.customNavigationRoots = () => nodes().filter(n=>!n.parentId);
+window.dashboardSyntheticTradePages = syntheticTradePages;
 window.dashboardNavigationHasRoute = primary => nodes().some(n => String(n.route || '').split('/')[0] === primary && Boolean(primary));
 window.customNavigationRefresh = async () => { navigation=await api(); };
 window.dashboardNavigationRender = (route, countryItems, productItems) => {
   const items = nodes();
   const current = location.hash.slice(1) || 'futures_rubber';
-  const active = n => n.route && (current===n.route || (['countries','products'].includes(n.route) && current.startsWith(n.route+'/')));
+  const active = n => n.id==='synthetic_trade' ? syntheticTradePages.some(([key])=>key===current)
+    : n.route && (current===n.route || (['countries','products'].includes(n.route) && current.startsWith(n.route+'/')));
   const target = n => {
     if (n.route==='countries') return countryItems[0] ? 'countries/'+countryItems[0].id : 'countries';
     if (n.route==='products') return productItems[0] ? 'products/'+productItems[0].id : 'products';

@@ -3,7 +3,8 @@ import {renderEditableMonthlyChart} from './dashboard-editable-chart-runtime-v2.
 import {cnkrStats,cnkrHeaders} from './dashboard-synthetic-trade-model-v1.js?v=20261026a';
 
 const app=document.querySelector('#app');
-const routes=new Set(['china_butadiene','korea_butadiene','china_synthetic_rubber','korea_synthetic_rubber']);
+const pages=window.dashboardSyntheticTradePages;
+const routes=new Set(pages.map(([key])=>key));
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const route=()=>location.hash.slice(1).split('/')[0];
 const tone=value=>value>0?'is-positive':value<0?'is-negative':'';
@@ -25,6 +26,9 @@ style.textContent=`
 .cnkr-table td.is-positive,.cnkr-layout .metric-note.is-positive{color:#f12626}
 .cnkr-table td.is-negative,.cnkr-layout .metric-note.is-negative{color:#3f8b61}
 .cnkr-table td.is-empty{color:var(--muted-2)}.cnkr-layout .metric-note{font-size:11px}
+.cnkr-route-nav{display:flex;flex-wrap:wrap;gap:8px 12px}
+.cnkr-route-nav a{padding:7px 10px;border:1px solid var(--line);color:var(--ink);font-size:13px}
+.cnkr-route-nav a:hover,.cnkr-route-nav a[aria-current=page]{background:#f3f5f6;border-color:var(--muted-2)}
 @media(max-width:1120px){.cnkr-chart-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:760px){.cnkr-chart-grid{grid-template-columns:1fr}}
 `;
@@ -68,7 +72,9 @@ function renderChart(card,page) {
 
 function render(host,page) {
   if(!host.isConnected||route()!==page.route)return;
-  host.innerHTML='<div class="cnkr-layout">'+cards(page)+table(page)+'<div class="cnkr-chart-sections">'+page.chartSections.map(section=>
+  const tabs='<nav class="cnkr-route-nav" aria-label="合成/丁二烯进出口">'+pages.map(([key,label])=>
+    `<a href="#${key}"${page.route===key?' aria-current="page"':''}>${esc(label)}</a>`).join('')+'</nav>';
+  host.innerHTML='<div class="cnkr-layout">'+tabs+cards(page)+table(page)+'<div class="cnkr-chart-sections">'+page.chartSections.map(section=>
     `<section class="thailand-chart-section cnkr-section" data-section-id="${esc(section.key)}"><header class="thailand-section-heading"><h2>${esc(section.title)}</h2><span>更新至 ${page.latestMonth} / MONTHLY</span></header><div class="thailand-chart-grid cnkr-chart-grid" data-section-source="${esc(section.key)}">${section.charts.map(c=>chartMarkup(page,section,c)).join('')}</div></section>`
   ).join('')+'</div><div class="thailand-scope-note"><strong>口径：</strong>'+page.notes.map(note=>`<p>${esc(note)}</p>`).join('')+'</div></div>';
   const intro=app.querySelector('.page-intro');

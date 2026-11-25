@@ -25,3 +25,7 @@
 .seasonal-chart .chart-axis-title {
   display: none;
 }
+
+.indicator-summary-page-host > .thailand-chart-section + .thailand-chart-section {
+  margin-block-start: 32px;
+}
