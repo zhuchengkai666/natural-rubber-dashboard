@@ -114,9 +114,15 @@ window.dashboardNavigationRender = (route, countryItems, productItems) => {
     const href = root.route || target(children[0] || {});
     const primary = `<button class="nav-item${expanded?' active':''}" data-nav-id="${esc(root.id)}" ${href?'data-route="'+esc(href)+'"':'data-nav-empty="'+esc(root.id)+'"'} type="button"><span class="nav-index">${String(index+1).padStart(2,'0')}</span><span class="nav-copy"><strong>${esc(root.label)}</strong><small>${children.length?'ANALYSIS DIRECTORY':'ANALYSIS PAGE'}</small></span><span class="nav-arrow">${children.length?(expanded?'⌃':'⌄'):'↗'}</span></button>`;
     return primary + (expanded && children.length ? `<div class="subnav primary-subnav" aria-label="${esc(root.label)}">`+children.map(n=>{
-      const details = n.id==='countries'?countryItems:n.id==='products'?productItems:[];
-      return `<a class="subnav-item${active(n)?' active':''}" data-nav-id="${esc(n.id)}" href="#${esc(target(n))}"><span>${esc(n.label)}</span><small>↗</small></a>` +
-        (active(n)&&details.length?'<div class="subnav">'+details.map(d=>`<a class="subnav-item${current===n.route+'/'+d.id?' active':''}" href="#${esc(n.route+'/'+d.id)}"><span>${esc(d.label)}</span></a>`).join('')+'</div>':'');
+      const isActive = active(n);
+      const trade = n.id==='synthetic_trade';
+      const details = trade ? syntheticTradePages
+        : (n.id==='countries' ? countryItems : n.id==='products' ? productItems : [])
+            .map(d=>[n.route+'/'+d.id,d.label]);
+      const expandedDetails = Boolean(isActive && details.length);
+      return `<a class="subnav-item${isActive?' active':''}" data-nav-id="${esc(n.id)}" href="#${esc(target(n))}"${trade?` aria-expanded="${expandedDetails}"`:''}><span>${esc(n.label)}</span><small>${trade?(expandedDetails?'⌃':'⌄'):'↗'}</small></a>` +
+        (expandedDetails?`<div class="subnav" aria-label="${esc(n.label)}">`+details.map(([url,label])=>
+          `<a class="subnav-item${current===url?' active':''}" href="#${esc(url)}"${current===url?' aria-current="page"':''}><span>${esc(label)}</span></a>`).join('')+'</div>':'');
     }).join('')+'</div>':'');
   }).join('');
 };

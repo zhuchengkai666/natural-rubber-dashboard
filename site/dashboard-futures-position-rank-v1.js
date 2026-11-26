@@ -89,7 +89,9 @@ rankStyle.textContent = `
 .position-rank-chart-meta { color: var(--muted-2); font-family: var(--font-mono); font-size: 9px; white-space: nowrap; }
 .position-rank-chart-legend { display: flex; flex-wrap: wrap; gap: 7px 15px; padding: 8px 16px 2px; color: var(--muted-2); font-family: var(--font-mono); font-size: 9px; }
 .position-rank-chart-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.position-rank-chart-legend span[hidden] { display: none; }
 .position-rank-chart-legend i { display: inline-block; width: 18px; height: 2px; }
+.position-rank-chart-legend .price-swatch { height: 8px; border-top: 1px solid #a4b4ca; background: #e8eef6; }
 .position-rank-chart-stage { height: 390px; min-height: 330px; padding: 5px 10px 10px; }
 .position-rank-chart-stage { position: relative; }
 .position-rank-chart-stage svg { display: block; width: 100%; height: 100%; overflow: visible; }
@@ -106,6 +108,9 @@ rankStyle.textContent = `
 .position-rank-chart-stage .axis-line { stroke: #cdd3d7; stroke-width: 1; }
 .position-rank-chart-stage .crosshair { stroke: #89939d; stroke-dasharray: 3 5; stroke-width: 1; opacity: .65; pointer-events: none; }
 .position-rank-chart-stage .series-line { fill: none; stroke-width: 2; vector-effect: non-scaling-stroke; }
+.position-rank-chart-stage .price-area { fill: #e8eef6; }
+.position-rank-chart-stage .price-outline { fill: none; stroke: #a4b4ca; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.position-rank-chart-stage .price-axis-text { fill: #58708e; }
 .position-rank-chart-stage .series-point { stroke: #fff; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
 .position-rank-chart-stage .empty-chart { fill: #7b858e; font-family: var(--font-sans); font-size: 13px; }
 .position-rank-note { margin: 0; color: var(--muted-2); font-size: 11px; line-height: 18px; }
@@ -119,7 +124,8 @@ rankStyle.textContent = `
 `;
 document.head.appendChild(rankStyle);
 
-const rankColors = { long: "#c74949", short: "#3f8b61", net: "#365f87" };
+const rankColors = { long: "#c74949", short: "#3f8b61", net: "#365f87", price: "#58708e" };
+const rankPriceLabel = "NR 主连收盘价";
 
 function rankEscape(value) {
   return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
@@ -326,7 +332,8 @@ function rankHistory(productCode, contractCode, member) {
     }
     const longValue = longSeen ? long : null;
     const shortValue = shortSeen ? short : null;
-    return { date, long: longValue, short: shortValue, net: longValue !== null && shortValue !== null ? longValue - shortValue : null };
+    return { date, long: longValue, short: shortValue, net: longValue !== null && shortValue !== null ? longValue - shortValue : null,
+      price: rankData?.nrMainClose?.[date] ?? null };
   });
 }
 
@@ -343,21 +350,44 @@ function rankSvgMarkers(points, key, x, y) {
   }).join("");
 }
 
-function rankSvgPath(points, key, x, y) {
-  let path = ""; let open = false;
+function rankSvgPath(points, key, x, y, baseline = null) {
+  let path = "";
+  let start = -1;
+  const closeArea = (last) => {
+    if (start >= 0 && baseline !== null) {
+      path += "L" + x(last).toFixed(1) + "," + baseline + " L" + x(start).toFixed(1) + "," + baseline + " Z ";
+    }
+    start = -1;
+  };
   for (let index = 0; index < points.length; index += 1) {
     const value = points[index][key];
-    if (value === null || value === undefined || !Number.isFinite(Number(value))) { open = false; continue; }
-    const command = open ? "L" : "M";
-    path += command + x(index).toFixed(1) + "," + y(Number(value)).toFixed(1) + " "; open = true;
+    if (value === null || value === undefined || !Number.isFinite(Number(value))) { closeArea(index - 1); continue; }
+    path += (start < 0 ? "M" : "L") + x(index).toFixed(1) + "," + y(Number(value)).toFixed(1) + " ";
+    if (start < 0) start = index;
   }
+  closeArea(points.length - 1);
   return path.trim();
+}
+
+function rankPriceAxis(values, top, innerHeight) {
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const roughStep = Math.max(1, (max - min) / 4);
+  const magnitude = 10 ** Math.floor(Math.log10(roughStep));
+  const step = magnitude * [1, 2, 2.5, 5, 10].find((multiple) => multiple * magnitude >= roughStep);
+  const low = Math.floor((min - step * .1) / step) * step;
+  const high = Math.ceil((max + step * .1) / step) * step;
+  return {
+    y: (value) => top + (high - value) * innerHeight / (high - low),
+    ticks: Array.from({ length: Math.round((high - low) / step) + 1 }, (_, i) => high - i * step),
+  };
 }
 
 function rankChartMarkup(product, contractCode, member) {
   const scopeLabel = contractCode === "MAIN" ? "主力合约" : contractCode === "ALL" ? "全部已披露合约" : contractCode;
   const title = member ? product.code + " · " + member + " · " + scopeLabel : "选择席位查看持仓历史";
-  return '<article class="futures-position-rank-chart-card" data-series-id="futures:position-rank:' + rankEscape(product.code) + ':' + rankEscape(contractCode) + ':' + rankEscape(member || "none") + '" data-chart-type="timeline-multiline" data-chart-size="full"><header class="position-rank-chart-header"><div><h2>' + rankEscape(title) + '</h2><p>历史折线 / 缺失值不插值、不补零</p></div><span class="position-rank-chart-meta">单位 / 手</span></header><div class="position-rank-chart-legend"><span><i style="background:' + rankColors.long + '"></i>多头持仓</span><span><i style="background:' + rankColors.short + '"></i>空头持仓</span><span><i style="background:' + rankColors.net + '"></i>披露净持仓（多减空）</span></div><div class="position-rank-chart-stage" data-rank-chart="true"><div class="position-rank-chart-tooltip" role="status" aria-live="polite"></div></div></article>';
+  const priceLegend = '<span class="position-rank-price-legend" title="按日选择 NR 主力合约，使用未复权收盘价" hidden><i class="price-swatch"></i>' + rankPriceLabel + '（右轴）</span>';
+  return '<article class="futures-position-rank-chart-card" data-series-id="futures:position-rank:' + rankEscape(product.code) + ':' + rankEscape(contractCode) + ':' + rankEscape(member || "none") + '" data-chart-type="timeline-multiline" data-chart-size="full"><header class="position-rank-chart-header"><div><h2>' + rankEscape(title) + '</h2><p>历史折线 / 缺失值不插值、不补零</p></div><span class="position-rank-chart-meta">单位 / 手</span></header><div class="position-rank-chart-legend"><span><i style="background:' + rankColors.long + '"></i>多头持仓</span><span><i style="background:' + rankColors.short + '"></i>空头持仓</span><span><i style="background:' + rankColors.net + '"></i>披露净持仓（多减空）</span>' + priceLegend + '</div><div class="position-rank-chart-stage" data-rank-chart="true"><div class="position-rank-chart-tooltip" role="status" aria-live="polite"></div></div></article>';
 }
 
 function rankPositionTooltip(tooltip, stage, event, fallbackWidth = 190, fallbackHeight = 112) {
@@ -391,24 +421,51 @@ function rankPositionTooltip(tooltip, stage, event, fallbackWidth = 190, fallbac
 function rankRenderSvg(stage, points) {
   const latest = points.findLast(p => [p.long,p.short,p.net].some(Number.isFinite));
   const card = stage.closest('.futures-position-rank-chart-card');
+  const prices = points.map((point) => point.price).filter(Number.isFinite);
+  const hasPrice = prices.length > 0;
   if (card) {
     card.dataset.seriesLatestDate = latest?.date || '';
     card.dataset.seriesLatestValue = [latest?.net,latest?.long,latest?.short].find(Number.isFinite) ?? '';
+    card.querySelector(".position-rank-price-legend").hidden = !hasPrice;
+    card.querySelector(".position-rank-chart-meta").textContent = hasPrice ? "左轴 / 手　右轴 / 元/吨" : "单位 / 手";
   }
-  const width = 980; const height = 350; const left = 58; const right = 20; const top = 20; const bottom = 42;
+  const width = 980; const height = 350; const left = 58; const right = hasPrice ? 65 : 20; const top = 20; const bottom = 42;
   const values = points.flatMap((point) => [point.long, point.short, point.net]).filter((value) => value !== null && Number.isFinite(Number(value))).map(Number);
   const innerWidth = width - left - right; const innerHeight = height - top - bottom;
   const x = (index) => left + (points.length <= 1 ? innerWidth / 2 : index * innerWidth / (points.length - 1));
   const min = values.length ? Math.min(0, ...values) : 0; const max = values.length ? Math.max(1, ...values) : 1; const span = Math.max(max - min, 1);
   const y = (value) => top + (max - value) * innerHeight / span;
   const ticks = Array.from({ length: 5 }, (_, index) => max - span * index / 4);
-  const labels = points.length ? [0, Math.floor((points.length - 1) / 2), points.length - 1] : [];
+  const labels = points.length ? [...new Set([0, Math.floor((points.length - 1) / 2), points.length - 1])] : [];
   const tooltip = stage.querySelector(".position-rank-chart-tooltip");
-  const chartMarkup = '<svg viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="席位多空持仓历史折线图">' + ticks.map((tick) => '<line class="grid-line" x1="' + left + '" x2="' + (width - right) + '" y1="' + y(tick).toFixed(1) + '" y2="' + y(tick).toFixed(1) + '"></line><text x="' + (left - 8) + '" y="' + (y(tick) + 3).toFixed(1) + '" text-anchor="end">' + rankEscape(rankFormat(Math.round(tick))) + '</text>').join("") + '<line class="axis-line" x1="' + left + '" x2="' + (width - right) + '" y1="' + (height - bottom) + '" y2="' + (height - bottom) + '"></line>' + labels.map((index) => '<text x="' + x(index).toFixed(1) + '" y="' + (height - 14) + '" text-anchor="middle">' + rankEscape(points[index].date) + '</text>').join("") + (values.length ? '<path class="series-line" stroke="' + rankColors.long + '" d="' + rankSvgPath(points, "long", x, y) + '"></path><path class="series-line" stroke="' + rankColors.short + '" d="' + rankSvgPath(points, "short", x, y) + '"></path><path class="series-line" stroke="' + rankColors.net + '" d="' + rankSvgPath(points, "net", x, y) + '"></path>' + rankSvgMarkers(points, "long", x, y) + rankSvgMarkers(points, "short", x, y) + rankSvgMarkers(points, "net", x, y) : '<text class="empty-chart" x="' + (width / 2) + '" y="' + (height / 2) + '" text-anchor="middle">请选择有披露记录的席位</text>') + '</svg>';
+  const plotRight = width - right;
+  const plotBottom = height - bottom;
+  const priceAxis = hasPrice ? rankPriceAxis(prices, top, innerHeight) : null;
+  const priceMarkup = priceAxis ? '<path class="price-area" d="' + rankSvgPath(points, "price", x, priceAxis.y, plotBottom) +
+    '"></path><path class="price-outline" d="' + rankSvgPath(points, "price", x, priceAxis.y) + '"></path>' +
+    rankSvgMarkers(points, "price", x, priceAxis.y) : "";
+  const rightAxis = priceAxis ? '<g class="position-rank-price-axis"><line class="axis-line" x1="' + plotRight + '" x2="' + plotRight +
+    '" y1="' + top + '" y2="' + plotBottom + '"></line>' + priceAxis.ticks.map((tick) => {
+      const tickY = priceAxis.y(tick).toFixed(1);
+      return '<line class="axis-line" x1="' + plotRight + '" x2="' + (plotRight + 4) + '" y1="' + tickY + '" y2="' + tickY +
+        '"></line><text class="price-axis-text" x="' + (plotRight + 8) + '" y="' + (Number(tickY) + 3) + '">' + rankFormat(tick) + '</text>';
+    }).join("") + '</g>' : "";
+  const grid = ticks.map((tick) => '<line class="grid-line" x1="' + left + '" x2="' + plotRight + '" y1="' + y(tick).toFixed(1) +
+    '" y2="' + y(tick).toFixed(1) + '"></line><text x="' + (left - 8) + '" y="' + (y(tick) + 3).toFixed(1) +
+    '" text-anchor="end">' + rankFormat(Math.round(tick)) + '</text>').join("");
+  const axis = '<line class="axis-line" x1="' + left + '" x2="' + plotRight + '" y1="' + plotBottom + '" y2="' + plotBottom + '"></line>';
+  const dateLabels = labels.map((index) => '<text x="' + x(index).toFixed(1) + '" y="' + (height - 14) +
+    '" text-anchor="middle">' + rankEscape(points[index].date) + '</text>').join("");
+  const holdings = values.length ? ["long", "short", "net"].map((key) => '<path class="series-line" stroke="' + rankColors[key] +
+    '" d="' + rankSvgPath(points, key, x, y) + '"></path>').join("") + rankSvgMarkers(points, "long", x, y) +
+    rankSvgMarkers(points, "short", x, y) + rankSvgMarkers(points, "net", x, y) :
+    '<text class="empty-chart" x="' + (width / 2) + '" y="' + (height / 2) + '" text-anchor="middle">请选择有披露记录的席位</text>';
+  const chartMarkup = '<svg viewBox="0 0 ' + width + ' ' + height + '" role="img" aria-label="席位多空持仓历史折线图' +
+    (hasPrice ? '和 NR 主连收盘价' : '') + '">' + priceMarkup + grid + axis + dateLabels + rightAxis + holdings + '</svg>';
   stage.innerHTML = chartMarkup;
   if (tooltip) stage.appendChild(tooltip);
   const svg = stage.querySelector("svg");
-  if (!svg || !values.length) {
+  if (!svg || (!values.length && !hasPrice)) {
     if (tooltip) tooltip.style.display = "none";
     return;
   }
@@ -417,20 +474,26 @@ function rankRenderSvg(stage, points) {
   crosshair.setAttribute("x1", x(0));
   crosshair.setAttribute("x2", x(0));
   crosshair.setAttribute("y1", top);
-  crosshair.setAttribute("y2", height - bottom);
+  crosshair.setAttribute("y2", plotBottom);
   svg.appendChild(crosshair);
   svg.onpointermove = (event) => {
-    const rect = svg.getBoundingClientRect();
-    const chartX = ((event.clientX - rect.left) / Math.max(rect.width, 1)) * width;
-    const clampedX = Math.max(left, Math.min(width - right, chartX));
-    const nearestIndex = points.length <= 1 ? 0 : Math.round((clampedX - left) / innerWidth * (points.length - 1));
+    const transform = svg.getScreenCTM();
+    if (!transform) return;
+    const at = new DOMPoint(event.clientX, event.clientY).matrixTransform(transform.inverse());
+    if (at.x < left || at.x > plotRight || at.y < top || at.y > plotBottom) {
+      tooltip.style.display = "none";
+      return;
+    }
+    const nearestIndex = points.length <= 1 ? 0 : Math.round((at.x - left) / innerWidth * (points.length - 1));
     const point = points[Math.max(0, Math.min(points.length - 1, nearestIndex))];
     crosshair.setAttribute("x1", x(nearestIndex));
     crosshair.setAttribute("x2", x(nearestIndex));
     tooltip.innerHTML = '<div class="tooltip-title">' + rankEscape(point.date || "日期未知") + '</div>' +
       '<div class="tooltip-row"><span style="color:' + rankColors.long + '">多头持仓</span><span class="tooltip-value">' + rankEscape(rankFormat(point.long)) + ' 手</span></div>' +
       '<div class="tooltip-row"><span style="color:' + rankColors.short + '">空头持仓</span><span class="tooltip-value">' + rankEscape(rankFormat(point.short)) + ' 手</span></div>' +
-      '<div class="tooltip-row"><span style="color:' + rankColors.net + '">披露净持仓</span><span class="tooltip-value">' + rankEscape(rankFormat(point.net)) + ' 手</span></div>';
+      '<div class="tooltip-row"><span style="color:' + rankColors.net + '">披露净持仓</span><span class="tooltip-value">' + rankEscape(rankFormat(point.net)) + ' 手</span></div>' +
+      (hasPrice ? '<div class="tooltip-row"><span style="color:' + rankColors.price + '">' + rankPriceLabel +
+        '</span><span class="tooltip-value">' + rankFormat(point.price) + (Number.isFinite(point.price) ? ' 元/吨' : '') + '</span></div>' : '');
     tooltip.style.display = "block";
     rankPositionTooltip(tooltip, stage, event);
   };

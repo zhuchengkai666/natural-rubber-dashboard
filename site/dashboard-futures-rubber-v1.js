@@ -5,6 +5,7 @@ let futuresData = null;
 let futuresDataPromise = null;
 let futuresRefreshPromise = null;
 const FUTURES_MIN_SPREAD_OPEN_INTEREST = 300;
+const MAIN_NEXT_SPREAD = "__MAIN_NEXT__";
 const COMBINED_POSITION_CODE = "RU+NR";
 const COMBINED_POSITION_LABEL = "RU+NR合计";
 const COMBINED_POSITION_COMPONENTS = ["RU", "NR"];
@@ -294,7 +295,21 @@ function combinedPositionProduct() {
 function spreadByValue(value) {
   const [productCode, spreadCode] = String(value || "").split("|");
   const product = productByCode(productCode);
-  return { product, spread: product?.spreads?.find((item) => item.code === spreadCode) || product?.spreads?.[0] || null };
+  return { product, spread: product && spreadsFor(product).find((item) => item.code === spreadCode) || product?.spreads?.[0] || null };
+}
+
+function mainNextSpread(product) {
+  return ["NR","BR"].includes(product.code)
+    ? {code:MAIN_NEXT_SPREAD, title:product.code + "月差（主力-次主力）"} : null;
+}
+
+function spreadsFor(product) {
+  const rolling = mainNextSpread(product);
+  return rolling ? [rolling, ...product.spreads] : product.spreads;
+}
+
+function spreadChartId(product, spread) {
+  return "futures:spread:" + product.code + ":" + spread.code;
 }
 
 function chartMarkup(title, unit, className, large = false, seriesId = title) {
@@ -361,6 +376,7 @@ function renderChart(card, series, unit, template, options = {}) {
     unit,
     metrics: options.metrics,
     systemChartId: options.systemChartId,
+    systemOnly: Boolean(options.systemOnly),
     svg: card.querySelector(".seasonal-chart"),
     stage: card.querySelector(".chart-stage"),
     tooltip: card.querySelector(".chart-tooltip"),
@@ -444,26 +460,39 @@ function spreadCycleChart(spread) {
     options: { crossYear: true, axisStartYear, axisStartMonth, axisEndYear, axisEndMonth },
   };
 }
-function renderSpreadMain(host) {
-  const select = host.querySelector("#futures-spread-select");
-  const { product, spread } = spreadByValue(select?.value);
-  const card = host.querySelector(".futures-spread-main-card");
-  if (!product || !spread || !card) return;
+function renderSpreadCard(card, product, spread, size) {
+  const title = spread.title || spread.code;
+  card.querySelector(".futures-card-title").textContent = title;
+  card.querySelector(".futures-card-subtitle").textContent = product.name + " · DAILY SEASONAL"
+    + (size === "large" ? " / RECENT 6 YEARS" : "");
+  if (spread.code === MAIN_NEXT_SPREAD) {
+    renderChart(card, [], product.priceUnit || "元/吨", size, {
+      systemOnly: true,
+      sourceLabel: title,
+      systemChartId: spreadChartId(product, spread),
+    });
+    return;
+  }
   const chart = spreadCycleChart(spread);
-  card.querySelector(".futures-card-title").textContent = spread.code;
-  card.querySelector(".futures-card-subtitle").textContent = product.name + " · DAILY SEASONAL / RECENT 6 YEARS";
-  renderChart(card, chart.series, product.priceUnit || "元/吨", "large", {
+  renderChart(card, chart.series, product.priceUnit || "元/吨", size, {
     ...chart.options,
     minSpreadOpenInterest: FUTURES_MIN_SPREAD_OPEN_INTEREST,
     excludeCalendarMonth: spread.nearMonth,
     sourceLabel: `${product.code} ${spread.code} 月差收盘价差`,
-    systemChartId: `futures:spread:${product.code}:${spread.code}`,
+    systemChartId: spreadChartId(product, spread),
     metrics: [{
       alias: "A",
       id: "mart.futures_rubber_month_spread_daily.spread_close_price",
       label: `${spread.code} 月差收盘价差（近月收盘价－远月收盘价）`,
     }],
   });
+}
+
+function renderSpreadMain(host) {
+  const select = host.querySelector("#futures-spread-select");
+  const { product, spread } = spreadByValue(select?.value);
+  const card = host.querySelector(".futures-spread-main-card");
+  if (product && spread && card) renderSpreadCard(card, product, spread, "large");
 }
 
 function contractMonthNumber(contract) {
@@ -610,43 +639,26 @@ function renderPositionMain(host) {
 function renderSpreadSmallCards(host) {
   const mount = host.querySelector(".futures-small-groups");
   if (!mount || mount.dataset.ready === "true") return;
-  mount.innerHTML = (futuresData.products || []).map((product) => {
+  const groups = (futuresData.products || []).map((product) => {
     const rankedCodes = (product.topSpreads || []).map((item) => item.code);
     const ranked = rankedCodes.map((code) => product.spreads.find((item) => item.code === code)).filter(Boolean)
       .sort((left, right) => left.nearMonth - right.nearMonth || left.farMonth - right.farMonth || String(left.code).localeCompare(String(right.code)));
-    const items = ranked.slice(0, 3);
+    const rolling = mainNextSpread(product);
+    return {product, items: rolling ? [rolling, ...ranked.slice(0, 3)] : ranked.slice(0, 3)};
+  });
+  mount.innerHTML = groups.map(({product, items}) => {
     return '<section class="futures-product-group" aria-label="' + futuresEscape(product.code) + '月差推荐">' +
       '<div class="futures-product-group-header"><h3>' + futuresEscape(product.code) + '</h3><span>' + futuresEscape(product.name) + '</span></div>' +
       '<div class="futures-small-chart-grid">' +
-        items.map((spread) => chartMarkup(spread.code, product.priceUnit || "元/吨", "futures-spread-small-card", false, "futures:spread:" + product.code + ":" + spread.code)).join("") +
+        items.map((spread) => chartMarkup(spread.title || spread.code, product.priceUnit || "元/吨", "futures-spread-small-card", false, spreadChartId(product, spread))).join("") +
       '</div>' +
     '</section>';
   }).join("");
   mount.dataset.ready = "true";
   const cards = [...mount.querySelectorAll(".futures-spread-small-card")];
   let index = 0;
-  for (const product of futuresData.products || []) {
-    const rankedCodes = (product.topSpreads || []).map((item) => item.code);
-    const ranked = rankedCodes.map((code) => product.spreads.find((item) => item.code === code)).filter(Boolean)
-      .sort((left, right) => left.nearMonth - right.nearMonth || left.farMonth - right.farMonth || String(left.code).localeCompare(String(right.code)));
-    for (const spread of ranked.slice(0, 3)) {
-      const card = cards[index++];
-      if (!card) continue;
-      card.querySelector(".futures-card-title").textContent = spread.code;
-      card.querySelector(".futures-card-subtitle").textContent = product.name + " · DAILY SEASONAL";
-      const chart = spreadCycleChart(spread);
-      renderChart(card, chart.series, product.priceUnit || "元/吨", "small", {
-        ...chart.options,
-        minSpreadOpenInterest: FUTURES_MIN_SPREAD_OPEN_INTEREST,
-        excludeCalendarMonth: spread.nearMonth,
-        sourceLabel: `${product.code} ${spread.code} 月差收盘价差`,
-        metrics: [{
-          alias: "A",
-          id: "mart.futures_rubber_month_spread_daily.spread_close_price",
-          label: `${spread.code} 月差收盘价差（近月收盘价－远月收盘价）`,
-        }],
-      });
-    }
+  for (const {product, items} of groups) {
+    for (const spread of items) renderSpreadCard(cards[index++], product, spread, "small");
   }
 }
 
@@ -655,7 +667,7 @@ function fillSpreadSelect(host) {
   if (!select || select.dataset.ready === "true") return;
   select.innerHTML = (futuresData.products || []).map((product) =>
     '<optgroup label="' + futuresEscape(product.code + " · " + product.name) + '">' +
-      product.spreads.map((spread) => '<option value="' + futuresEscape(product.code + "|" + spread.code) + '">' + futuresEscape(spread.code) + '</option>').join("") +
+      spreadsFor(product).map((spread) => '<option value="' + futuresEscape(product.code + "|" + spread.code) + '">' + futuresEscape(spread.title || spread.code) + '</option>').join("") +
     '</optgroup>'
   ).join("");
   const preferred = "RU|RU9-1";
